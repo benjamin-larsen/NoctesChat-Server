@@ -1,6 +1,6 @@
-@WebApplication2_HostAddress = http://localhost:5117
+@NoctesChat_HostAddress = http://localhost:5117
 
-GET {{WebApplication2_HostAddress}}/weatherforecast/
+GET {{NoctesChat_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###
