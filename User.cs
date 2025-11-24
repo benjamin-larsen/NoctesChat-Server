@@ -6,6 +6,9 @@ namespace NoctesChat;
 [BsonIgnoreExtraElements]
 public class User
 {
+    [BsonElement("id"), BsonRequired]
+    public UInt64 ID { get; set; }
+
     [BsonElement("name")]
     [JsonPropertyName("name")]
     public string Name { get; set; }

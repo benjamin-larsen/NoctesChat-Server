@@ -30,8 +30,6 @@ app.MapStaticAssets();
  return API JSON not found
  */
 
-List<string> x = new();
-
 app.MapPost("/register", async () =>
 {
     var user = await database.FindUserByName("John Doe");
@@ -61,7 +59,10 @@ app.MapGet("/weatherforecast", () =>
     })
     .WithName("GetWeatherForecast");
 
-app.MapFallback(() => "test");
+app.MapFallback(() =>
+{
+    return Results.File("./index.html", "text/html");
+});
 
 app.Run();
 
