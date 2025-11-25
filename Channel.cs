@@ -6,8 +6,11 @@ namespace NoctesChat;
 public class Channel
 {
     [BsonElement("id"), BsonRequired]
-    public UInt64 ID { get; set; }
+    public ulong ID { get; set; }
     
-    [BsonElement("members"), BsonRequired]
-    public List<UInt64> Members { get; set; }
+    [BsonElement("owner"), BsonRequired]
+    public ulong OwnerID { get; set; }
+    
+    [BsonElement("name"), BsonRequired]
+    public string ChannelName { get; set; }
 }

@@ -1,38 +1,49 @@
 ﻿namespace NoctesChat;
 
 using MongoDB.Driver;
-using MongoDB.Bson;
-using MongoDB.Bson.IO;
 using MongoDB.Bson.Serialization;
 
 // "C:\Program Files\MongoDB\Server\8.0\bin\mongod" --port 27017 --dbpath "C:\Users\User\RiderProjects\NoctesChat\data"
 
 public class Database
 {
-    private SnowflakeGen _userIDGenerator = new (1735689600000);
-    private SnowflakeGen _msgIDGenerator = new (1735689600000);
-    private SnowflakeGen _channelIDGenerator = new (1735689600000);
+    private static SnowflakeGen _userIDGenerator = new (1735689600000);
+    private static SnowflakeGen _msgIDGenerator = new (1735689600000);
+    private static SnowflakeGen _channelIDGenerator = new (1735689600000);
 
-    public MongoClient Client;
-    public IMongoDatabase DB;
-    public IMongoCollection<User> Users;
-    public IMongoCollection<Message> Messages;
-    public IMongoCollection<Channel> Channels;
+    public static MongoClient Client;
+    public static IMongoDatabase DB;
+    public static IMongoCollection<User> Users;
+    public static IMongoCollection<Message> Messages;
+    public static IMongoCollection<Channel> Channels;
+    public static IMongoCollection<ChannelMembership> ChannelMembers;
+    
+    private static bool _isSetup = false;
 
-    static Database()
+    public static void Setup()
     {
+        if (_isSetup) throw new Exception("Database is already initialized");
+        _isSetup = true;
+
         // Setup Serializers for MongoDB
-        BsonSerializer.RegisterSerializer(typeof(UInt64), new UInt64DBSerializer());
-    }
-
-    public Database()
-    {
-        Client = new MongoClient("mongodb://localhost:27017/");
+        BsonSerializer.RegisterSerializer(typeof(ulong), new UInt64DBSerializer());
+        Client = new MongoClient(Environment.GetEnvironmentVariable("db_conn") ?? "mongodb://localhost:27017/");
 
         DB = Client.GetDatabase("main");
         Users = DB.GetCollection<User>("users");
         Messages = DB.GetCollection<Message>("messages");
         Channels = DB.GetCollection<Channel>("channels");
+        ChannelMembers = DB.GetCollection<ChannelMembership>("members");
+        
+        var user_channelList_Index = new CreateIndexModel<ChannelMembership>(
+            Builders<ChannelMembership>.IndexKeys.Ascending(m => m.UserID).Descending(u => u.LastAccessed)
+        );
+        
+        var channelMember_Index = new CreateIndexModel<ChannelMembership>(
+            Builders<ChannelMembership>.IndexKeys.Ascending(m => m.ChannelID).Ascending(m => m.UserID)
+        );
+        
+        ChannelMembers.Indexes.CreateMany([user_channelList_Index, channelMember_Index]);
         
         var channelID_Index = new CreateIndexModel<Channel>(
             Builders<Channel>.IndexKeys.Ascending(c => c.ID),
@@ -45,17 +56,29 @@ public class Database
             Builders<User>.IndexKeys.Ascending(u => u.ID),
             new CreateIndexOptions { Unique = true }
         );
+        
+        var userEmail_Index = new CreateIndexModel<User>(
+            Builders<User>.IndexKeys.Ascending(u => u.Email),
+            new CreateIndexOptions { Unique = true }
+        );
+        
+        var userName_Index = new CreateIndexModel<User>(
+            Builders<User>.IndexKeys.Ascending(u => u.Username),
+            new CreateIndexOptions { Unique = true }
+        );
 
-        Users.Indexes.CreateOne(userID_Index);
+        Users.Indexes.CreateMany([userID_Index, userEmail_Index, userName_Index]);
         
         var msgID_Index = new CreateIndexModel<Message>(
             Builders<Message>.IndexKeys.Ascending(m => m.ID),
             new CreateIndexOptions { Unique = true }
         );
-
-        Messages.Indexes.CreateOne(msgID_Index);
-
-        //InsertMessage(18446740003709551610, "Test");
+        
+        var msg_channel_Index = new CreateIndexModel<Message>(
+            Builders<Message>.IndexKeys.Descending(m => m.ID).Ascending(m => m.ChannelID)
+        );
+        
+        Messages.Indexes.CreateMany([msgID_Index, msg_channel_Index]);
         
         var filter = Builders<Message>.Filter.Empty;
         var allMessages = Messages.Find(filter);
@@ -64,46 +87,31 @@ public class Database
         {
             foreach (var r in cursor.ToEnumerable())
             {
-                Console.WriteLine($"ID: {r.ID}, Author: {r.Author}, Content: {r.Content}, Timestamp: {r.Timestamp}");
+                Console.WriteLine($"ID: {r.ID}, Author: {r.Author}, Content: {r.Content}, Timestamp: {r.Timestamp}, Edited: {r.EditedTimestamp?.ToString() ?? "Not Edited"}");
             }
         }
-
-        Users.InsertOne(new User
-        {
-            ID = _userIDGenerator.Generate(),
-            Name = "John Doe",
-            Password =  "password"
-        });
         
         Console.WriteLine("Connected to MongoDB");
     }
 
-    public async Task<Message> InsertMessage(UInt64 author, string content)
+    public static async Task<Message> InsertMessage(ulong author, ulong channel, string content)
     {
         Message message = new Message
         {
             ID = _msgIDGenerator.Generate(),
+            ChannelID = channel,
             Author = author,
             Content = content,
             Timestamp = Utils.GetTime()
         };
 
-        try
-        {
-            await Messages.InsertOneAsync(message);
-            return message;
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e.Message);
-            throw;
-        }
+        await Messages.InsertOneAsync(message);
+        return message;
     }
-
-    public async Task<User?> FindUserByName(string name)
+    
+    public static async Task<User?> FindUserByID(ulong id)
     {
-        var filter = Builders<User>.Filter.Eq("Name", name);
+        var filter = Builders<User>.Filter.Eq("id", id);
         return await Users.Find(filter).FirstOrDefaultAsync();
     }
-
 }

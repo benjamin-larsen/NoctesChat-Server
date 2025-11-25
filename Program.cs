@@ -1,72 +1,53 @@
 using NoctesChat;
+
 using System.Text.Json;
+
+/*var result = new byte[32];
+var success = Base64Url.DecodeFromChars("VGVzdCBoZWxsbyB0aGVyZQx", result, out _, out var bytesWritten);
+
+Console.WriteLine($"Bytes: {Convert.ToHexString(result)}\nWritten: {bytesWritten}\nSuccess: {success.ToString()}");*/
+
+var rand = UserToken.GenerateToken();
+var key = UserToken.EncodeToken(53454, rand);
+
+Console.WriteLine(JsonSerializer.Serialize(new {
+    rand = Convert.ToHexString(rand),
+    key = key
+}));
+
+var x = UserToken.DecodeToken(key);
+
+Console.WriteLine(JsonSerializer.Serialize(new {
+    userId = x.userID,
+    token = Convert.ToHexString(x.token),
+    success = x.success
+}));
+
+Database.Setup();
 
 var builder = WebApplication.CreateBuilder(args);
 
-var database = new Database();
-
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
 app.UseHttpsRedirection();
 app.MapStaticAssets();
 
-/*
- /users/
- Static File: not found
- return index.html
- 
- /api/random
- Static File: not found
- return API JSON not found
- */
-
-app.MapPost("/register", async () =>
-{
-    var user = await database.FindUserByName("John Doe");
-    
-    return Results.Ok(new {
-        result = true,
-        user
-    });
-});
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-    {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast");
+APIHandler.Use(app);
 
 app.MapFallback(() =>
 {
     return Results.File("./index.html", "text/html");
 });
 
-app.Run();
+app.UseExceptionHandler(exApp => exApp.Run(async context => {
+    context.Response.StatusCode = 500;
+    context.Response.ContentType = "application/json";
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+    await context.Response.WriteAsJsonAsync(new {
+        error = "Internal Server Error"
+    });
+}));
+
+app.Run();

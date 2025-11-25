@@ -3,15 +3,28 @@ using MongoDB.Bson.Serialization.Serializers;
 
 namespace NoctesChat;
 
-public class UInt64DBSerializer : SerializerBase<UInt64>
+public class UInt64DBSerializer : SerializerBase<ulong>
 {
-    public override UInt64 Deserialize(BsonDeserializationContext context, BsonDeserializationArgs args)
+    public override ulong Deserialize(BsonDeserializationContext context, BsonDeserializationArgs args)
     {
-        return (UInt64)context.Reader.ReadInt64();
+        return (ulong)context.Reader.ReadInt64();
     }
 
-    public override void Serialize(BsonSerializationContext context, BsonSerializationArgs args, UInt64 value)
+    public override void Serialize(BsonSerializationContext context, BsonSerializationArgs args, ulong value)
     {
-        context.Writer.WriteInt64((Int64)value);
+        context.Writer.WriteInt64((long)value);
+    }
+}
+
+public class BinU64DBSerializer : SerializerBase<ulong>
+{
+    public override ulong Deserialize(BsonDeserializationContext context, BsonDeserializationArgs args)
+    {
+        return Utils.UInt64FromBin(context.Reader.ReadBytes());
+    }
+
+    public override void Serialize(BsonSerializationContext context, BsonSerializationArgs args, ulong value)
+    {
+        context.Writer.WriteBytes(Utils.UInt64ToBin(value));
     }
 }
