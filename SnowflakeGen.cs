@@ -1,44 +1,39 @@
-﻿namespace NoctesChat;
+﻿using System.Collections.Concurrent;
+
+namespace NoctesChat;
 
 public class SnowflakeGen
 {
-    private Int64 _timestamp;
-    private Int64 lastTimestamp;
-    private Int32 sequence = 0;
+    private long _timestamp;
+    private long lastTimestamp;
+    private int sequence = 0;
     private readonly object _lock = new();
 
-    private static Int32 maxSequence = (1 << 16) - 1;
-    private static Int64 maxTimestamp = ((Int64)1 << 48) - 1;
+    private static int maxSequence = (1 << 16) - 1;
+    private static long maxTimestamp = (1L << 48) - 1;
 
-    public static Int64 GetTime()
-    {
-        Int64 now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-        return now;
-    }
-
-    public SnowflakeGen(Int64 timestamp)
+    public SnowflakeGen(long timestamp)
     {
         _timestamp = timestamp;
     }
 
-    public UInt64 Generate()
+    public ulong Generate()
     {
-        var time = GetTime();
-        var relativeTime = time - _timestamp;
         lock (_lock) {
+            var time = Utils.GetTime();
+            var relativeTime = time - _timestamp;
 
-        if (time > lastTimestamp) sequence = 0;
-        lastTimestamp = time;
+            if (time > lastTimestamp) sequence = 0;
+            lastTimestamp = time;
 
-        var Sequence = sequence++;
+            var currentSequence = sequence++;
 
-        if (Sequence > maxSequence || relativeTime > maxTimestamp)
-        {
-            throw new OverflowException("Sequence and/or Timestamp overflow their boundary.");
-        }
+            if (currentSequence > maxSequence || relativeTime > maxTimestamp)
+            {
+                throw new OverflowException("Sequence and/or Timestamp overflow their boundary.");
+            }
 
-        return (uint)Sequence | ((UInt64)relativeTime << 16);
+            return (uint)currentSequence | ((ulong)relativeTime << 16);
         }
     }
 }
