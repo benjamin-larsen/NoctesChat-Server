@@ -5,6 +5,7 @@ public class SnowflakeGen
     private Int64 _timestamp;
     private Int64 lastTimestamp;
     private Int32 sequence = 0;
+    private readonly object _lock = new();
 
     private static Int32 maxSequence = (1 << 16) - 1;
     private static Int64 maxTimestamp = ((Int64)1 << 48) - 1;
@@ -25,6 +26,7 @@ public class SnowflakeGen
     {
         var time = GetTime();
         var relativeTime = time - _timestamp;
+        lock (_lock) {
 
         if (time > lastTimestamp) sequence = 0;
         lastTimestamp = time;
@@ -37,5 +39,6 @@ public class SnowflakeGen
         }
 
         return (uint)Sequence | ((UInt64)relativeTime << 16);
+        }
     }
 }
