@@ -12,9 +12,6 @@ public class UserToken {
     
     [BsonElement("created_at")]
     public long CreatedAt { get; set; }
-    
-    [BsonElement("last_accessed")]
-    public long LastAccessed { get; set; }
 
     public static (ulong userID, byte[] token, bool success) DecodeToken(string key) {
         var segments = key.Split(':');

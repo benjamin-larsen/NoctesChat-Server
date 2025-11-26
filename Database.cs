@@ -7,9 +7,9 @@ using MongoDB.Bson.Serialization;
 
 public class Database
 {
-    private static SnowflakeGen _userIDGenerator = new (1735689600000);
-    private static SnowflakeGen _msgIDGenerator = new (1735689600000);
-    private static SnowflakeGen _channelIDGenerator = new (1735689600000);
+    public static SnowflakeGen _userIDGenerator = new (1735689600000);
+    public static SnowflakeGen _msgIDGenerator = new (1735689600000);
+    public static SnowflakeGen _channelIDGenerator = new (1735689600000);
 
     public static MongoClient Client;
     public static IMongoDatabase DB;
@@ -40,7 +40,8 @@ public class Database
         );
         
         var channelMember_Index = new CreateIndexModel<ChannelMembership>(
-            Builders<ChannelMembership>.IndexKeys.Ascending(m => m.ChannelID).Ascending(m => m.UserID)
+            Builders<ChannelMembership>.IndexKeys.Ascending(m => m.ChannelID).Ascending(m => m.UserID),
+            new CreateIndexOptions { Unique = true }
         );
         
         ChannelMembers.Indexes.CreateMany([user_channelList_Index, channelMember_Index]);
@@ -59,12 +60,12 @@ public class Database
         
         var userEmail_Index = new CreateIndexModel<User>(
             Builders<User>.IndexKeys.Ascending(u => u.Email),
-            new CreateIndexOptions { Unique = true }
+            new CreateIndexOptions { Unique = true, Name = "email" }
         );
         
         var userName_Index = new CreateIndexModel<User>(
             Builders<User>.IndexKeys.Ascending(u => u.Username),
-            new CreateIndexOptions { Unique = true }
+            new CreateIndexOptions { Unique = true, Name = "username" }
         );
 
         Users.Indexes.CreateMany([userID_Index, userEmail_Index, userName_Index]);

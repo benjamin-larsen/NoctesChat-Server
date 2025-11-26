@@ -30,14 +30,14 @@ public class User
     
     static HMACSHA256 hmac = new HMACSHA256(Convert.FromHexString(Environment.GetEnvironmentVariable("pwd_pepper")!));
 
-    static string HashPassword(string password, string salt) {
+    public static string HashPassword(string password, string salt) {
         var innerHmac = HMACSHA256.HashData(Convert.FromHexString(salt), Encoding.UTF8.GetBytes(password));
         var outerHmac = hmac.ComputeHash(innerHmac);
 
         return Convert.ToHexString(outerHmac);
     }
 
-    static (string hash, string salt) HashPassword(string password) {
+    public static (string hash, string salt) HashPassword(string password) {
         var salt = RandomNumberGenerator.GetBytes(16);
         
         var innerHmac = HMACSHA256.HashData(salt, Encoding.UTF8.GetBytes(password));

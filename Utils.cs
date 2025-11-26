@@ -1,4 +1,6 @@
-﻿namespace NoctesChat;
+﻿using System.Text.RegularExpressions;
+
+namespace NoctesChat;
 
 public class Utils
 {
@@ -15,6 +17,13 @@ public class Utils
         }
         
         return bytes;
+    }
+
+    public static string? DecodeDuplicateKeyError(string message) {
+        var match = Regex.Match(message, @"^E11000 duplicate key error.*index: ([^ ]+) dup key");
+        if (match.Groups.Count != 2) return null;
+        
+        return match.Groups[1].Value;
     }
 
     public static ulong UInt64FromBin(byte[] bytes) {

@@ -1,27 +1,5 @@
 using NoctesChat;
-
-using System.Text.Json;
-
-/*var result = new byte[32];
-var success = Base64Url.DecodeFromChars("VGVzdCBoZWxsbyB0aGVyZQx", result, out _, out var bytesWritten);
-
-Console.WriteLine($"Bytes: {Convert.ToHexString(result)}\nWritten: {bytesWritten}\nSuccess: {success.ToString()}");*/
-
-var rand = UserToken.GenerateToken();
-var key = UserToken.EncodeToken(53454, rand);
-
-Console.WriteLine(JsonSerializer.Serialize(new {
-    rand = Convert.ToHexString(rand),
-    key = key
-}));
-
-var x = UserToken.DecodeToken(key);
-
-Console.WriteLine(JsonSerializer.Serialize(new {
-    userId = x.userID,
-    token = Convert.ToHexString(x.token),
-    success = x.success
-}));
+using dotenv.net;
 
 Database.Setup();
 
@@ -30,6 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment()) {
+    DotEnv.Load();
+}
 
 app.UseHttpsRedirection();
 app.MapStaticAssets();
