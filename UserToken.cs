@@ -1,5 +1,4 @@
 ﻿using System.Buffers;
-using MongoDB.Bson.Serialization.Attributes;
 using System.Security.Cryptography;
 using System.Text;
 using System.Buffers.Text;
@@ -7,10 +6,8 @@ using System.Buffers.Text;
 namespace NoctesChat;
 
 public class UserToken {
-    [BsonElement("key")]
     public byte[] KeyHash { get; set; }
     
-    [BsonElement("created_at")]
     public long CreatedAt { get; set; }
 
     public static (ulong userID, byte[] token, bool success) DecodeToken(string key) {

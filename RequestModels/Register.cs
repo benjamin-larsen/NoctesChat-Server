@@ -20,10 +20,11 @@ public class RegisterValidator : AbstractValidator<RegisterBody>
         RuleFor(x => x.Username)
             .NotEmpty().WithMessage("Username is required")
             .Length(3, 20).WithMessage("Username must be between 3 and 20 characters")
-            .Matches("^[a-z0-9_]*$").WithMessage("Username may only contain lowercase characters, numbers and underscores.");
+            .Matches("^[a-z0-9_]*$").WithMessage("Username may only contain lowercase characters, numbers and underscores");
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email is required")
-            .EmailAddress().WithMessage("Invalid email address");
+            .EmailAddress().WithMessage("Invalid email address")
+            .MaximumLength(254).WithMessage("Email Address is too long: can't be more than 254 characters");
         RuleFor(x => x.Password)
             .NotEmpty().WithMessage("Password is required");
     }

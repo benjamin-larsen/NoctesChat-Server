@@ -1,6 +1,7 @@
 using NoctesChat;
 using dotenv.net;
 
+DotEnv.Load();
 Database.Setup();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,10 +9,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
-
-if (app.Environment.IsDevelopment()) {
-    DotEnv.Load();
-}
 
 app.UseHttpsRedirection();
 app.MapStaticAssets();

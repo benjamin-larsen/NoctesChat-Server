@@ -1,6 +1,4 @@
-﻿using System.Collections.Concurrent;
-
-namespace NoctesChat;
+﻿namespace NoctesChat;
 
 public class SnowflakeGen
 {
@@ -19,6 +17,8 @@ public class SnowflakeGen
 
     public ulong Generate()
     {
+        // if time < lastTimestamp sleep for lastTimestamp - time and goto start
+        // if currentSequence > maxSequence sleep for 1ms and goto start
         lock (_lock) {
             var time = Utils.GetTime();
             var relativeTime = time - _timestamp;
@@ -28,7 +28,7 @@ public class SnowflakeGen
 
             var currentSequence = sequence++;
 
-            if (currentSequence > maxSequence || relativeTime > maxTimestamp)
+            if (currentSequence > maxSequence || relativeTime > maxTimestamp || currentSequence < 0 || relativeTime < 0)
             {
                 throw new OverflowException("Sequence and/or Timestamp overflow their boundary.");
             }

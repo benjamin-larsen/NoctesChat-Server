@@ -8,7 +8,7 @@ public class CreateChannelBody {
     public string Name { get; set; }
     
     [JsonPropertyName("members")]
-    public string[] Members { get; set; }
+    public ulong[] Members { get; set; }
 }
 
 public class CreateChannelValidator : AbstractValidator<CreateChannelBody>
@@ -16,9 +16,8 @@ public class CreateChannelValidator : AbstractValidator<CreateChannelBody>
     public CreateChannelValidator() {
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Channel Name is required")
-            .Length(3, 20).WithMessage("Channel Name must be between 3 and 20 characters");
+            .Length(3, 50).WithMessage("Channel Name must be between 3 and 50 characters");
         RuleForEach(x => x.Members)
-            .Matches("^[1-9][0-9]{15,19}$").WithMessage("Invalid Member ID")
             .NotEmpty().WithMessage("Member ID cannot be empty");
         RuleFor(x => x.Members)
             .Must(ids => ids.Length == ids.Distinct().Count()).WithMessage("You can't specify the same Member ID twice")
