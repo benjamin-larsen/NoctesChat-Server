@@ -96,7 +96,7 @@ public class APIHandler {
         await using var txn = await conn.BeginTransactionAsync();
 
         try {
-            user = await Database.GetUserByEmail(reqBody.Email, conn, txn);
+            user = await Database.GetUserForLogin(reqBody.Email, conn, txn);
             
             if (user == null || !CryptographicOperations.FixedTimeEquals(
                     User.HashPassword(reqBody.Password, user.PasswordSalt!), 

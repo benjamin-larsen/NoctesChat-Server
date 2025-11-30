@@ -238,7 +238,7 @@ public class Database {
         };
     }
     
-    public static async Task<User?> GetUserByEmail(string email, MySqlConnection conn, MySqlTransaction transaction) {
+    public static async Task<User?> GetUserForLogin(string email, MySqlConnection conn, MySqlTransaction transaction) {
         await using var cmd  = conn.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = $"""
@@ -253,9 +253,7 @@ public class Database {
         await using var reader = await cmd.ExecuteReaderAsync();
 
         if (!await reader.ReadAsync()) return null;
-
-        var field = 0;
-
+        
         return new User {
             ID = reader.GetUInt64(0 /* id */),
             PasswordHash = reader.GetFieldValue<byte[]>(1 /* password_hash */),
