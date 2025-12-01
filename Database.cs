@@ -144,8 +144,7 @@ public class Database {
         cmd.ExecuteNonQuery();
     }
 
-    public static async Task<bool> HasUserToken(ulong userId, byte[] tokenHash) {
-        await using var conn = await GetConnection();
+    public static async Task<bool> HasUserToken(ulong userId, byte[] tokenHash, MySqlConnection conn) {
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT 1 FROM user_tokens WHERE user_id = @id AND key_hash = @key_hash;";
 
@@ -211,12 +210,11 @@ public class Database {
         return rowsAffected == 1;
     }
 
-    public static async Task<User?> GetUserById(ulong userId, bool includeEmail = true, bool includePassword = true) {
-        await using var conn = await GetConnection();
+    public static async Task<User?> GetUserById(ulong userId, bool includeEmail, MySqlConnection conn) {
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
                           SELECT
-                              id, username{(includeEmail ? ", email, email_verified" : "")}{(includePassword ? ", password_hash, password_salt" : "")}, created_at
+                              id, username{(includeEmail ? ", email, email_verified" : "")}, created_at
                           FROM users WHERE id = @id;
                           """;
 
@@ -233,8 +231,6 @@ public class Database {
             Username = reader.GetString(field++),
             Email = includeEmail ? reader.GetString(field++) : null,
             EmailVerified = includeEmail && reader.GetBoolean(field++),
-            PasswordHash = includePassword ? reader.GetFieldValue<byte[]>(field++) : null,
-            PasswordSalt = includePassword ? reader.GetFieldValue<byte[]>(field++) : null,
             CreatedAt = reader.GetFieldValue<long>(field),
         };
     }

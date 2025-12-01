@@ -1,4 +1,5 @@
-﻿using NoctesChat.RequestModels;
+﻿using MySqlConnector;
+using NoctesChat.RequestModels;
 
 namespace NoctesChat.APIRoutes;
 
@@ -95,7 +96,7 @@ public class Messages {
         
         var userId = (ulong)ctx.Items["authId"]!;
         
-        await using var conn = await Database.GetConnection();
+        var conn = (MySqlConnection)ctx.Items["conn"]!;
         if (!await Database.ExistsInChannel(userId, channelId, conn, null))
             return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
         
@@ -180,7 +181,7 @@ public class Messages {
         var userId = (ulong)ctx.Items["authId"]!;
         object? user = null;
 
-        await using var conn = await Database.GetConnection();
+        var conn = (MySqlConnection)ctx.Items["conn"]!;
         await using var txn = await conn.BeginTransactionAsync();
 
         try {

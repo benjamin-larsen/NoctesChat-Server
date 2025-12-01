@@ -9,7 +9,7 @@ public class Channels {
         var userId = (ulong)ctx.Items["authId"]!;
         var channelList = new List<object>();
         
-        await using var conn = await Database.GetConnection();
+        var conn = (MySqlConnection)ctx.Items["conn"]!;
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
                           SELECT
@@ -77,7 +77,7 @@ public class Channels {
         var creationTime = Utils.GetTime();
         object? user = null;
         
-        await using var conn = await Database.GetConnection();
+        var conn = (MySqlConnection)ctx.Items["conn"]!;
         await using var txn = await conn.BeginTransactionAsync();
 
         try {

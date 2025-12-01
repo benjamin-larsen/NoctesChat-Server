@@ -9,7 +9,7 @@ public class Auth {
         var userId = (ulong)ctx.Items["authId"]!;
         var keyHash = (byte[])ctx.Items["authKeyHash"]!;
         
-        await using var conn = await Database.GetConnection();
+        var conn = (MySqlConnection)ctx.Items["conn"]!;
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM user_tokens WHERE user_id = @user_id AND key_hash = @key_hash";
 
@@ -153,13 +153,15 @@ public class Auth {
         
         var keyHash = SHA256.HashData(parsedToken.token);
         
-        var hasToken = await Database.HasUserToken(parsedToken.userID, keyHash);
+        await using var conn = await Database.GetConnection();
+        var hasToken = await Database.HasUserToken(parsedToken.userID, keyHash, conn);
         
         if (!hasToken)
             return Results.Json(new { error = "You've been logged out. Please log in and try again." }, statusCode: 401);
         
         context.HttpContext.Items["authId"] = parsedToken.userID;
         context.HttpContext.Items["authKeyHash"] = keyHash;
+        context.HttpContext.Items["conn"] = conn;
         
         return await next(context);
     }

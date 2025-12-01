@@ -1,4 +1,5 @@
 ﻿using System.Text.RegularExpressions;
+using MySqlConnector;
 
 namespace NoctesChat.APIRoutes;
 
@@ -8,7 +9,8 @@ public class Users {
             return Results.Json(new { error = "Invalid user id." }, statusCode: 400);
         }
 
-        var result = await Database.GetUserById(id, false, false);
+        await using var conn = await Database.GetConnection();
+        var result = await Database.GetUserById(id, false, conn);
 
         if (result == null)
             return Results.Json(new { error = "User doesn't exist." }, statusCode: 404);
@@ -44,8 +46,9 @@ public class Users {
     }
 
     internal static async Task<IResult> GetSelf(HttpContext ctx) {
+        var conn = (MySqlConnection)ctx.Items["conn"]!;
         var userId = (ulong)ctx.Items["authId"]!;
-        var user = (await Database.GetUserById(userId, true, false))!;
+        var user = (await Database.GetUserById(userId, true, conn))!;
         
         return Results.Json(
             new {
@@ -53,6 +56,7 @@ public class Users {
                 username = user.Username,
                 email = user.Email,
                 email_verified = user.EmailVerified,
+                created_at = user.CreatedAt
             }, statusCode: 200);
     }
 }
