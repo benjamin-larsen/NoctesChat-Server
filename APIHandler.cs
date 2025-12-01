@@ -1,12 +1,14 @@
-﻿using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using MySqlConnector;
-using NoctesChat.APIRoutes;
-using NoctesChat.RequestModels;
+﻿using NoctesChat.APIRoutes;
 
 namespace NoctesChat;
+
+public class APIException : Exception {
+    public int StatusCode { get; }
+
+    public APIException(string message, int statusCode) : base(message) {
+        StatusCode = statusCode;
+    }
+}
 
 public class APIHandler {
     private static IResult NotFound() {
@@ -32,7 +34,7 @@ public class APIHandler {
         
         // Messages
         apiRouter.MapPost("/channels/{_channelId}/messages", Messages.Post).AddEndpointFilter(Auth.Middleware);
-        apiRouter.MapGet("/channels/{_channelId}/messages", Messages.Get).AddEndpointFilter(Auth.Middleware);
+        apiRouter.MapGet("/channels/{_channelId}/messages", Messages.GetList).AddEndpointFilter(Auth.Middleware);
 
         apiRouter.MapFallback(NotFound);
     }
