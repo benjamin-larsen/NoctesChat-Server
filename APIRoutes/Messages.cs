@@ -26,9 +26,12 @@ public class Messages {
             }
         );
         
+        if (before != null && after != null)
+            return Results.Json(new { error = "Both 'after' and 'before' parameters defined, you can only use one." }, statusCode: 400);
+        
         var includeSelf = Utils.GetQueryParameter<bool>(
             ctx.Request.Query, "include_self", false, (rawValue) => {
-                if (!bool.TryParse(rawValue, out var parsedValue))
+                if (!Utils.TryParseBool(rawValue, out var parsedValue))
                     throw new APIException($"Invalid value for 'include_self'", 400);
                 
                 if (before == null && after == null)
@@ -53,8 +56,42 @@ public class Messages {
             }
         );
         
-        if (before != null && after != null)
-            return Results.Json(new { error = "Both 'after' and 'before' parameters defined, you can only use one." }, statusCode: 400);
+        var useTimestamp = Utils.GetQueryParameter<bool>(
+            ctx.Request.Query, "use_timestamp", false, (rawValue) => {
+                if (!Utils.TryParseBool(rawValue, out var parsedValue))
+                    throw new APIException($"Invalid value for 'use_timestamp'", 400);
+                
+                if (parsedValue && before == null && after == null)
+                    throw new APIException("Can't use parameter 'use_timestamp' without 'before' or 'after'", 400);
+                
+                return parsedValue;
+            }
+        );
+
+        if (useTimestamp) {
+            if (before != null) {
+                if (before < (ulong)Database.MsgIDGenerator.BaseTimestamp)
+                    return Results.Json(new { error = "'before' underflow min timestamp." }, statusCode: 400);
+                
+                if (before > (ulong)(Database.MsgIDGenerator.BaseTimestamp + SnowflakeGen.maxTimestamp))
+                    return Results.Json(new { error = "'before' overflow max timestamp." }, statusCode: 400);
+                
+                before = Database.MsgIDGenerator.ConvertFromTimestamp((long)before, includeSelf ? 0 : SnowflakeGen.maxSequence);
+            } else if (after != null) {
+                if (after < (ulong)Database.MsgIDGenerator.BaseTimestamp)
+                    return Results.Json(new { error = "'after' underflow min timestamp." }, statusCode: 400);
+                
+                if (after > (ulong)(Database.MsgIDGenerator.BaseTimestamp + SnowflakeGen.maxTimestamp))
+                    return Results.Json(new { error = "'after' overflow max timestamp." }, statusCode: 400);
+                
+                after = Database.MsgIDGenerator.ConvertFromTimestamp((long)after, includeSelf ? SnowflakeGen.maxSequence : 0);
+            }
+            else
+                return Results.Json(new { error = "You must specify 'after' or 'before' to use timestamp." }, statusCode: 400);
+        }
+        
+        // around
+        var isAscending = before != null;
         
         var userId = (ulong)ctx.Items["authId"]!;
         
@@ -77,7 +114,7 @@ public class Messages {
                           WHERE m.channel_id = @channel_id{(
                               after != null ? $" AND m.id {(includeSelf ? "<=" : "<")} @after_id" :
                               before != null ? $" AND m.id {(includeSelf ? ">=" : ">")} @before_id" : "")}
-                          ORDER BY id DESC
+                          ORDER BY id {(isAscending ? "ASC" : "DESC")}
                           LIMIT {(limit + 1).ToString()};
                           """;
         
@@ -103,7 +140,6 @@ public class Messages {
             
             messageList.Add(new {
                 id = reader.GetFieldValue<ulong>(0 /* Message ID */).ToString(),
-                channel = channelId.ToString(),
                 author = hasAuthor ? new {
                     id = reader.GetFieldValue<ulong>(4 /* Author ID */).ToString(),
                     username = reader.GetFieldValue<string>(5 /* Author Username */),
@@ -203,7 +239,6 @@ public class Messages {
         
         return Results.Json(new {
             id = messageId.ToString(),
-            channel = channelId.ToString(),
             author = user,
             content = reqBody.Content,
             timestamp = creationTime,

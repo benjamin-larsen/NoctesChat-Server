@@ -101,7 +101,7 @@ public class Database {
                             `edited_timestamp` bigint DEFAULT NULL,
                             PRIMARY KEY (`id`),
                             KEY `fk_message_author` (`author_id`),
-                            KEY `index_channel_messages` (`channel_id`,`id` DESC),
+                            KEY `index_channel_messages` (`channel_id`,`id`),
 
                             CONSTRAINT `fk_message_channel`
                               FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`)

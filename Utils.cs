@@ -2,7 +2,7 @@
 
 namespace NoctesChat;
 
-public class Utils
+public static class Utils
 {
     public static long GetTime()
     {
@@ -16,6 +16,39 @@ public class Utils
         return match.Groups[1].Value;
     }
 
+    public static bool TryParseBool(string str, out bool value) {
+        switch (str.Trim().ToLowerInvariant()) {
+            case "true":
+            case "yes":
+            case "t":
+            case "y":
+            case "1":
+            case "yuh":
+            case "yup":
+            case "yeah": {
+                value = true;
+                return true;
+            }
+
+            case "false":
+            case "no":
+            case "f":
+            case "n":
+            case "0":
+            case "nah":
+            case "nope":
+            case "no way": {
+                value = false;
+                return true;
+            }
+
+            default: {
+                value = false;
+                return false;
+            }
+        }
+    }
+
     public static T GetQueryParameter<T>(
         IQueryCollection query,
         string key,
@@ -23,7 +56,7 @@ public class Utils
         Func<string, T> parser) {
         if (query.TryGetValue(key, out var values)) {
             if (values.Count > 1)
-                throw new APIException($"Multiple '{key}' parameters defined.", 400);//Results.Json(new { error = $"Multiple '{key}' parameters defined." }, statusCode: 400);
+                throw new APIException($"Multiple '{key}' parameters defined.", 400);
 
             var parsed = parser(values[0]!);
 
