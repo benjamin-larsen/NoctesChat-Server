@@ -17,8 +17,6 @@ public class CreateChannelValidator : AbstractValidator<CreateChannelBody>
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Channel Name is required")
             .Length(3, 50).WithMessage("Channel Name must be between 3 and 50 characters");
-        RuleForEach(x => x.Members)
-            .NotEmpty().WithMessage("Member ID cannot be empty");
         RuleFor(x => x.Members)
             .Must(ids => ids.Length == ids.Distinct().Count()).WithMessage("You can't specify the same Member ID twice")
             .NotEmpty().WithMessage("You can't create a channel all for yourself");

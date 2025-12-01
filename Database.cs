@@ -59,6 +59,7 @@ public class Database {
                             `owner` bigint unsigned NOT NULL,
                             `name` varchar(50) NOT NULL,
                             `member_count` int unsigned NOT NULL,
+                            `created_at` bigint NOT NULL,
                             PRIMARY KEY (`id`),
                             KEY `fk_channel_owner` (`owner`),
 
@@ -212,7 +213,7 @@ public class Database {
 
     public static async Task<User?> GetUserById(ulong userId, bool includeEmail = true, bool includePassword = true) {
         await using var conn = await GetConnection();
-        await using var cmd  = conn.CreateCommand();
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
                           SELECT
                               id, username{(includeEmail ? ", email, email_verified" : "")}{(includePassword ? ", password_hash, password_salt" : "")}, created_at
@@ -259,6 +260,20 @@ public class Database {
             PasswordHash = reader.GetFieldValue<byte[]>(1 /* password_hash */),
             PasswordSalt = reader.GetFieldValue<byte[]>(2 /* password_salt */),
         };
+    }
+
+    public static async Task<bool> ExistsInChannel(
+        ulong userId, ulong channelId, MySqlConnection conn, MySqlTransaction? transaction) {
+        await using var cmd  = conn.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = $"SELECT 1 FROM channel_members WHERE user_id = @user_id AND channel_id = @channel_id;";
+        
+        cmd.Parameters.AddWithValue("@user_id", userId);
+        cmd.Parameters.AddWithValue("@channel_id", channelId);
+
+        var value = await cmd.ExecuteScalarAsync();
+        
+        return value != null;
     }
     
     public static async Task<MySqlConnection> GetConnection()

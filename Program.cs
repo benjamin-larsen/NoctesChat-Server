@@ -10,7 +10,6 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-app.UseHttpsRedirection();
 app.MapStaticAssets();
 
 APIHandler.Use(app);
