@@ -6,10 +6,6 @@ using System.Buffers.Text;
 namespace NoctesChat;
 
 public class UserToken {
-    public byte[] KeyHash { get; set; }
-    
-    public long CreatedAt { get; set; }
-
     public static (ulong userID, byte[] token, bool success) DecodeToken(string key) {
         var segments = key.Split(':');
 
