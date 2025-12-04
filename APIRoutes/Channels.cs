@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.RequestModels;
 
@@ -8,6 +9,8 @@ public class Channels {
     internal static async Task<IResult> GetList(HttpContext ctx) {
         var userId = (ulong)ctx.Items["authId"]!;
         var channelList = new List<object>();
+        
+        var ct = ctx.RequestAborted;
         
         var conn = (MySqlConnection)ctx.Items["conn"]!;
         await using var cmd = conn.CreateCommand();
@@ -29,9 +32,9 @@ public class Channels {
         
         cmd.Parameters.AddWithValue("@user_id", userId);
         
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-        while (await reader.ReadAsync()) {
+        while (await reader.ReadAsync(ct)) {
             var hasOwner = !reader.IsDBNull(5 /* Owner ID */);
             
             channelList.Add(new {
@@ -60,6 +63,8 @@ public class Channels {
         
         var userId = (ulong)ctx.Items["authId"]!;
         
+        var ct = ctx.RequestAborted;
+        
         var conn = (MySqlConnection)ctx.Items["conn"]!;
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -81,9 +86,9 @@ public class Channels {
         cmd.Parameters.AddWithValue("@user_id", userId);
         cmd.Parameters.AddWithValue("@channel_id", channelId);
         
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-        if (!await reader.ReadAsync())
+        if (!await reader.ReadAsync(ct))
             return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
         
         var hasOwner = !reader.IsDBNull(5 /* Owner ID */);
@@ -104,12 +109,14 @@ public class Channels {
 
     internal static async Task<IResult> Create(HttpContext ctx) {
         var userId = (ulong)ctx.Items["authId"]!;
+        
+        var ct = ctx.RequestAborted;
 
         CreateChannelBody? reqBody = null;
 
         try {
-            reqBody = await ctx.Request.ReadFromJsonAsync<CreateChannelBody>();
-        } catch {}
+            reqBody = await ctx.Request.ReadFromJsonAsync<CreateChannelBody>(ct);
+        } catch (JsonException) {}
         
         if (reqBody == null)
             return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
@@ -127,7 +134,7 @@ public class Channels {
         object? user = null;
         
         var conn = (MySqlConnection)ctx.Items["conn"]!;
-        await using var txn = await conn.BeginTransactionAsync();
+        await using var txn = await conn.BeginTransactionAsync(ct);
 
         try {
             await using (var cmd = conn.CreateCommand()) {
@@ -136,9 +143,9 @@ public class Channels {
 
                 cmd.Parameters.AddWithValue("@id", userId);
             
-                await using var reader = await cmd.ExecuteReaderAsync();
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-                if (!await reader.ReadAsync()) throw new Exception("Failed to get user");
+                if (!await reader.ReadAsync(ct)) throw new Exception("Failed to get user");
 
                 user = new {
                     id = reader.GetFieldValue<ulong>(0 /* User ID */).ToString(),
@@ -157,7 +164,7 @@ public class Channels {
                 cmd.Parameters.AddWithValue("@name", reqBody.Name);
                 cmd.Parameters.AddWithValue("@created_at", creationTime);
 
-                var rowsInserted = await cmd.ExecuteNonQueryAsync();
+                var rowsInserted = await cmd.ExecuteNonQueryAsync(ct);
 
                 if (rowsInserted != 1) throw new Exception("Failed to insert channel");
             }
@@ -181,12 +188,12 @@ public class Channels {
                 cmd.Parameters.AddWithValue("@channel_id", channelId);
                 cmd.Parameters.AddWithValue("@last_accessed", creationTime);
 
-                var rowsInserted = await cmd.ExecuteNonQueryAsync();
+                var rowsInserted = await cmd.ExecuteNonQueryAsync(ct);
 
                 if (rowsInserted != (reqBody.Members.Length + 1)) throw new Exception("Failed to insert channel members");
             }
 
-            await txn.CommitAsync();
+            await txn.CommitAsync(ct);
         }
         catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.NoReferencedRow2) {
             await txn.RollbackAsync();

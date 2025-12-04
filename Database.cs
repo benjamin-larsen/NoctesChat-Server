@@ -1,4 +1,5 @@
 ﻿using MySqlConnector;
+using System.Threading;
 
 namespace NoctesChat;
 
@@ -144,19 +145,20 @@ public class Database {
         cmd.ExecuteNonQuery();
     }
 
-    public static async Task<bool> HasUserToken(ulong userId, byte[] tokenHash, MySqlConnection conn) {
+    public static async Task<bool> HasUserToken(ulong userId, byte[] tokenHash, MySqlConnection conn, CancellationToken ct) {
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT 1 FROM user_tokens WHERE user_id = @id AND key_hash = @key_hash;";
 
         cmd.Parameters.AddWithValue("@id", userId);
         cmd.Parameters.AddWithValue("@key_hash", tokenHash);
 
-        var value = await cmd.ExecuteScalarAsync();
+        var value = await cmd.ExecuteScalarAsync(ct);
         
         return value != null;
     }
 
-    public static async Task<bool> InsertUser(User user, MySqlConnection conn, MySqlTransaction transaction) {
+    public static async Task<bool> InsertUser(
+        User user, MySqlConnection conn, MySqlTransaction transaction, CancellationToken ct) {
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = """
@@ -188,12 +190,18 @@ public class Database {
         cmd.Parameters.AddWithValue("@password_salt", user.PasswordSalt);
         cmd.Parameters.AddWithValue("@created_at", user.CreatedAt);
 
-        var rowsAffected = await cmd.ExecuteNonQueryAsync();
+        var rowsAffected = await cmd.ExecuteNonQueryAsync(ct);
         
         return rowsAffected == 1;
     }
     
-    public static async Task<bool> InsertUserToken(ulong userId, byte[] keyHash, long createdAt, MySqlConnection conn, MySqlTransaction transaction) {
+    public static async Task<bool> InsertUserToken(
+        ulong userId,
+        byte[] keyHash,
+        long createdAt,
+        MySqlConnection conn,
+        MySqlTransaction transaction,
+        CancellationToken ct) {
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = """
@@ -205,12 +213,12 @@ public class Database {
         cmd.Parameters.AddWithValue("@key_hash", keyHash);
         cmd.Parameters.AddWithValue("@created_at", createdAt);
 
-        var rowsAffected = await cmd.ExecuteNonQueryAsync();
+        var rowsAffected = await cmd.ExecuteNonQueryAsync(ct);
         
         return rowsAffected == 1;
     }
 
-    public static async Task<User?> GetUserById(ulong userId, bool includeEmail, MySqlConnection conn) {
+    public static async Task<User?> GetUserById(ulong userId, bool includeEmail, MySqlConnection conn, CancellationToken ct) {
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
                           SELECT
@@ -220,9 +228,9 @@ public class Database {
 
         cmd.Parameters.AddWithValue("@id", userId);
         
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-        if (!await reader.ReadAsync()) return null;
+        if (!await reader.ReadAsync(ct)) return null;
 
         var field = 0;
 
@@ -235,7 +243,8 @@ public class Database {
         };
     }
     
-    public static async Task<User?> GetUserForLogin(string email, MySqlConnection conn, MySqlTransaction transaction) {
+    public static async Task<User?> GetUserForLogin(
+        string email, MySqlConnection conn, MySqlTransaction transaction, CancellationToken ct) {
         await using var cmd  = conn.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = $"""
@@ -247,9 +256,9 @@ public class Database {
 
         cmd.Parameters.AddWithValue("@email", email);
         
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-        if (!await reader.ReadAsync()) return null;
+        if (!await reader.ReadAsync(ct)) return null;
         
         return new User {
             ID = reader.GetUInt64(0 /* id */),
@@ -259,7 +268,7 @@ public class Database {
     }
 
     public static async Task<bool> ExistsInChannel(
-        ulong userId, ulong channelId, MySqlConnection conn, MySqlTransaction? transaction) {
+        ulong userId, ulong channelId, MySqlConnection conn, MySqlTransaction? transaction, CancellationToken ct) {
         await using var cmd  = conn.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = $"SELECT 1 FROM channel_members WHERE user_id = @user_id AND channel_id = @channel_id;";
@@ -267,15 +276,15 @@ public class Database {
         cmd.Parameters.AddWithValue("@user_id", userId);
         cmd.Parameters.AddWithValue("@channel_id", channelId);
 
-        var value = await cmd.ExecuteScalarAsync();
+        var value = await cmd.ExecuteScalarAsync(ct);
         
         return value != null;
     }
     
-    public static async Task<MySqlConnection> GetConnection()
+    public static async Task<MySqlConnection> GetConnection(CancellationToken ct)
     {
         var conn = new MySqlConnection(connectionUrl + "Database=noctes_chat; UseAffectedRows=true;");
-        await conn.OpenAsync();
+        await conn.OpenAsync(ct);
         return conn;
     }
 }

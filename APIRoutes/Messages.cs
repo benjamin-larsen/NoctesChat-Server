@@ -1,4 +1,5 @@
-﻿using MySqlConnector;
+﻿using System.Text.Json;
+using MySqlConnector;
 using NoctesChat.RequestModels;
 
 namespace NoctesChat.APIRoutes;
@@ -96,8 +97,10 @@ public class Messages {
         
         var userId = (ulong)ctx.Items["authId"]!;
         
+        var ct = ctx.RequestAborted;
+        
         var conn = (MySqlConnection)ctx.Items["conn"]!;
-        if (!await Database.ExistsInChannel(userId, channelId, conn, null))
+        if (!await Database.ExistsInChannel(userId, channelId, conn, null, ct))
             return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
         
         await using var cmd = conn.CreateCommand();
@@ -129,9 +132,9 @@ public class Messages {
 
         var hasMore = false;
         var messageList = new List<object>();
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-        while (await reader.ReadAsync()) {
+        while (await reader.ReadAsync(ct)) {
             if (messageList.Count >= limit) {
                 hasMore = true;
                 break;
@@ -161,11 +164,13 @@ public class Messages {
             return Results.Json(new { error = "Invalid channel id." }, statusCode: 400);
         }
         
+        var ct = ctx.RequestAborted;
+        
         PostMessageBody? reqBody = null;
 
         try {
-            reqBody = await ctx.Request.ReadFromJsonAsync<PostMessageBody>();
-        } catch {}
+            reqBody = await ctx.Request.ReadFromJsonAsync<PostMessageBody>(ct);
+        } catch (JsonException) {}
         
         if (reqBody == null)
             return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
@@ -182,7 +187,7 @@ public class Messages {
         object? user = null;
 
         var conn = (MySqlConnection)ctx.Items["conn"]!;
-        await using var txn = await conn.BeginTransactionAsync();
+        await using var txn = await conn.BeginTransactionAsync(ct);
 
         try {
             await using (var cmd = conn.CreateCommand()) {
@@ -191,9 +196,9 @@ public class Messages {
 
                 cmd.Parameters.AddWithValue("@id", userId);
             
-                await using var reader = await cmd.ExecuteReaderAsync();
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-                if (!await reader.ReadAsync()) throw new Exception("Failed to get user");
+                if (!await reader.ReadAsync(ct)) throw new Exception("Failed to get user");
 
                 user = new {
                     id = reader.GetFieldValue<ulong>(0 /* User ID */).ToString(),
@@ -202,7 +207,7 @@ public class Messages {
                 };
             }
 
-            if (!await Database.ExistsInChannel(userId, channelId, conn, txn)) {
+            if (!await Database.ExistsInChannel(userId, channelId, conn, txn, ct)) {
                 await txn.RollbackAsync();
                 return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
             }
@@ -224,12 +229,12 @@ public class Messages {
                 cmd.Parameters.AddWithValue("@content", reqBody.Content);
                 cmd.Parameters.AddWithValue("@timestamp", creationTime);
             
-                var rowsInserted = await cmd.ExecuteNonQueryAsync();
+                var rowsInserted = await cmd.ExecuteNonQueryAsync(ct);
             
                 if (rowsInserted != 1) throw new  Exception("Failed to insert message.");
             }
 
-            await txn.CommitAsync();
+            await txn.CommitAsync(ct);
         }
         catch {
             await txn.RollbackAsync();

@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography;
+using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.RequestModels;
 
@@ -9,6 +10,8 @@ public class Auth {
         var userId = (ulong)ctx.Items["authId"]!;
         var keyHash = (byte[])ctx.Items["authKeyHash"]!;
         
+        var ct = ctx.RequestAborted;
+        
         var conn = (MySqlConnection)ctx.Items["conn"]!;
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM user_tokens WHERE user_id = @user_id AND key_hash = @key_hash";
@@ -16,7 +19,7 @@ public class Auth {
         cmd.Parameters.AddWithValue("@user_id", userId);
         cmd.Parameters.AddWithValue("@key_hash", keyHash);
         
-        var rowsDeleted = await cmd.ExecuteNonQueryAsync();
+        var rowsDeleted = await cmd.ExecuteNonQueryAsync(ct);
 
         if (rowsDeleted != 1)
             return Results.Json(new { error = "Logout Failed." }, statusCode: 500);
@@ -26,10 +29,12 @@ public class Auth {
     
     internal static async Task<IResult> Login(HttpContext ctx) {
         LoginBody? reqBody = null;
+        
+        var ct = ctx.RequestAborted;
 
         try {
-            reqBody = await ctx.Request.ReadFromJsonAsync<LoginBody>();
-        } catch {}
+            reqBody = await ctx.Request.ReadFromJsonAsync<LoginBody>(ct);
+        } catch (JsonException) {}
         
         if (reqBody == null)
             return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
@@ -42,11 +47,11 @@ public class Auth {
         byte[] token;
         User? user;
         
-        await using var conn = await Database.GetConnection();
-        await using var txn = await conn.BeginTransactionAsync();
+        await using var conn = await Database.GetConnection(ct);
+        await using var txn = await conn.BeginTransactionAsync(ct);
 
         try {
-            user = await Database.GetUserForLogin(reqBody.Email, conn, txn);
+            user = await Database.GetUserForLogin(reqBody.Email, conn, txn, ct);
             
             if (user == null || !CryptographicOperations.FixedTimeEquals(
                     User.HashPassword(reqBody.Password, user.PasswordSalt!), 
@@ -58,10 +63,10 @@ public class Auth {
             token = UserToken.GenerateToken();
             var tokenHash = SHA256.HashData(token);
 
-            if (!await Database.InsertUserToken(user.ID, tokenHash, Utils.GetTime(), conn, txn))
+            if (!await Database.InsertUserToken(user.ID, tokenHash, Utils.GetTime(), conn, txn, ct))
                 throw new Exception("Failed to insert user token into Database.");
 
-            await txn.CommitAsync();
+            await txn.CommitAsync(ct);
         }
         catch {
             await txn.RollbackAsync();
@@ -73,10 +78,12 @@ public class Auth {
 
     internal static async Task<IResult> Register(HttpContext ctx) {
         RegisterBody? reqBody = null;
+        
+        var ct = ctx.RequestAborted;
 
         try {
-            reqBody = await ctx.Request.ReadFromJsonAsync<RegisterBody>();
-        } catch {}
+            reqBody = await ctx.Request.ReadFromJsonAsync<RegisterBody>(ct);
+        } catch (JsonException) {}
         
         if (reqBody == null)
             return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
@@ -100,20 +107,20 @@ public class Auth {
 
         byte[] token;
         
-        await using var conn = await Database.GetConnection();
-        await using var txn = await conn.BeginTransactionAsync();
+        await using var conn = await Database.GetConnection(ct);
+        await using var txn = await conn.BeginTransactionAsync(ct);
 
         try {
-            if (!await Database.InsertUser(user, conn, txn))
+            if (!await Database.InsertUser(user, conn, txn, ct))
                 throw new Exception("Failed to insert user into Database.");
             
             token = UserToken.GenerateToken();
             var tokenHash = SHA256.HashData(token);
 
-            if (!await Database.InsertUserToken(user.ID, tokenHash, user.CreatedAt, conn, txn))
+            if (!await Database.InsertUserToken(user.ID, tokenHash, user.CreatedAt, conn, txn, ct))
                 throw new Exception("Failed to insert user token into Database.");
 
-            await txn.CommitAsync();
+            await txn.CommitAsync(ct);
         }
         catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.DuplicateKeyEntry) {
             await txn.RollbackAsync();
@@ -153,8 +160,10 @@ public class Auth {
         
         var keyHash = SHA256.HashData(parsedToken.token);
         
-        await using var conn = await Database.GetConnection();
-        var hasToken = await Database.HasUserToken(parsedToken.userID, keyHash, conn);
+        var ct = context.HttpContext.RequestAborted;
+        
+        await using var conn = await Database.GetConnection(ct);
+        var hasToken = await Database.HasUserToken(parsedToken.userID, keyHash, conn, ct);
         
         if (!hasToken)
             return Results.Json(new { error = "You've been logged out. Please log in and try again." }, statusCode: 401);
