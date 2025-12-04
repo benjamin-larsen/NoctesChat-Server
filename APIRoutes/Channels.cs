@@ -53,6 +53,55 @@ public class Channels {
         }, statusCode: 200);
     }
 
+    internal static async Task<IResult> GetSingle(HttpContext ctx, string _channelId) {
+        if (!ulong.TryParse(_channelId, out var channelId)) {
+            return Results.Json(new { error = "Invalid channel id." }, statusCode: 400);
+        }
+        
+        var userId = (ulong)ctx.Items["authId"]!;
+        
+        var conn = (MySqlConnection)ctx.Items["conn"]!;
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+                          SELECT
+                              cm.channel_id AS id,
+                              cm.last_accessed,
+                              c.name,
+                              c.member_count,
+                              c.created_at,
+                              o.id AS owner_id,
+                              o.username AS owner_username,
+                              o.created_at AS owner_created_at
+                          FROM channel_members cm
+                          JOIN channels c ON cm.channel_id = c.id
+                          LEFT JOIN users o ON c.owner = o.id
+                          WHERE cm.user_id = @user_id AND cm.channel_id = @channel_id;
+                          """;
+        
+        cmd.Parameters.AddWithValue("@user_id", userId);
+        cmd.Parameters.AddWithValue("@channel_id", channelId);
+        
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        if (!await reader.ReadAsync())
+            return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
+        
+        var hasOwner = !reader.IsDBNull(5 /* Owner ID */);
+            
+        return Results.Json(new {
+            id = reader.GetFieldValue<ulong>(0 /* Channel ID */).ToString(),
+            name = reader.GetFieldValue<string>(2 /* Channel Name */),
+            owner = hasOwner ? new {
+                id = reader.GetFieldValue<ulong>(5 /* Owner ID */).ToString(),
+                username = reader.GetFieldValue<string>(6 /* Owner Username */),
+                created_at = reader.GetFieldValue<long>(7 /* Owner Created At */),
+            } : null,
+            member_count = reader.GetFieldValue<uint>(3 /* Channel Member Count */),
+            created_at = reader.GetFieldValue<long>(4 /* Channel Created At */),
+            last_accessed = reader.GetFieldValue<long>(1 /* Last Accessed */)
+        }, statusCode: 200);
+    }
+
     internal static async Task<IResult> Create(HttpContext ctx) {
         var userId = (ulong)ctx.Items["authId"]!;
 

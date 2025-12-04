@@ -7,8 +7,6 @@ public class User
 {
     public ulong ID { get; set; }
     
-    public List<UserToken> Tokens { get; set; } = [];
-
     public string Username { get; set; }
 
     public string? Email { get; set; }

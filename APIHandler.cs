@@ -29,6 +29,7 @@ public class APIHandler {
         apiRouter.MapGet("/users/@me", (Delegate)Users.GetSelf).AddEndpointFilter(Auth.Middleware);
         
         // Channels
+        apiRouter.MapGet("/channels/{_channelId}", Channels.GetSingle).AddEndpointFilter(Auth.Middleware);
         apiRouter.MapGet("/channels", (Delegate)Channels.GetList).AddEndpointFilter(Auth.Middleware);
         apiRouter.MapPost("/channels", (Delegate)Channels.Create).AddEndpointFilter(Auth.Middleware);
         
