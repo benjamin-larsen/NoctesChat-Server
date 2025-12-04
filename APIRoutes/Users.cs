@@ -3,7 +3,7 @@ using MySqlConnector;
 
 namespace NoctesChat.APIRoutes;
 
-public class Users {
+public static class Users {
     internal static async Task<IResult> Get(CancellationToken ct, string _id) {
         if (!ulong.TryParse(_id, out var id)) {
             return Results.Json(new { error = "Invalid user id." }, statusCode: 400);

@@ -1,5 +1,4 @@
 ﻿using MySqlConnector;
-using System.Threading;
 
 namespace NoctesChat;
 

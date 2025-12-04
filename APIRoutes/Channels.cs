@@ -5,7 +5,7 @@ using NoctesChat.RequestModels;
 
 namespace NoctesChat.APIRoutes;
 
-public class Channels {
+public static class Channels {
     internal static async Task<IResult> GetList(HttpContext ctx) {
         var userId = (ulong)ctx.Items["authId"]!;
         var channelList = new List<object>();

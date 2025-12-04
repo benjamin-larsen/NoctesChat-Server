@@ -4,7 +4,7 @@ using NoctesChat.RequestModels;
 
 namespace NoctesChat.APIRoutes;
 
-public class Messages {
+public static class Messages {
     internal static async Task<IResult> GetList(HttpContext ctx, string _channelId) {
         if (!ulong.TryParse(_channelId, out var channelId)) {
             return Results.Json(new { error = "Invalid channel id." }, statusCode: 400);
@@ -212,7 +212,7 @@ public class Messages {
                 return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
             }
             
-            messageId = Database.ChannelIDGenerator.Generate();
+            messageId = Database.MsgIDGenerator.Generate();
             creationTime = Utils.GetTime();
 
             await using (var cmd = conn.CreateCommand()) {

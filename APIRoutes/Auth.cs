@@ -5,7 +5,7 @@ using NoctesChat.RequestModels;
 
 namespace NoctesChat.APIRoutes;
 
-public class Auth {
+public static class Auth {
     internal static async Task<IResult> Logout(HttpContext ctx) {
         var userId = (ulong)ctx.Items["authId"]!;
         var keyHash = (byte[])ctx.Items["authKeyHash"]!;

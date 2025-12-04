@@ -7,9 +7,21 @@ Database.Setup();
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(name: "localhost-cors",
+        policy  => {
+            policy.WithOrigins("http://localhost:5173").AllowAnyMethod().AllowAnyHeader();
+        });
+});
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+if (builder.Environment.IsDevelopment()) {
+    app.UseCors("localhost-cors");
+}
 
 app.MapStaticAssets();
 
