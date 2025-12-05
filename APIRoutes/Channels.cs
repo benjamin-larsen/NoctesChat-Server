@@ -129,7 +129,7 @@ public static class Channels {
         if (reqBody.Members.Contains(userId))
             return Results.Json(new { error = "You are already implicitly added in this channel." }, statusCode: 400);
 
-        var channelId = Database.ChannelIDGenerator.Generate();
+        var channelId = await Database.ChannelIDGenerator.Generate(ct);
         var creationTime = Utils.GetTime();
         object? user = null;
         

@@ -212,7 +212,7 @@ public static class Messages {
                 return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
             }
             
-            messageId = Database.MsgIDGenerator.Generate();
+            messageId = await Database.MsgIDGenerator.Generate(ct);
             creationTime = Utils.GetTime();
 
             await using (var cmd = conn.CreateCommand()) {

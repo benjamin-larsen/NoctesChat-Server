@@ -96,7 +96,7 @@ public static class Auth {
         var (pwdHash, pwdSalt) = User.HashPassword(reqBody.Password);
 
         var user = new User {
-            ID = Database.UserIDGenerator.Generate(),
+            ID = await Database.UserIDGenerator.Generate(ct),
             Username = reqBody.Username,
             Email = reqBody.Email,
             EmailVerified = false,
