@@ -12,7 +12,7 @@ public static class Channels {
         
         var ct = ctx.RequestAborted;
         
-        var conn = (MySqlConnection)ctx.Items["conn"]!;
+        await using var conn = await Database.GetConnection(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
                           SELECT
@@ -65,7 +65,7 @@ public static class Channels {
         
         var ct = ctx.RequestAborted;
         
-        var conn = (MySqlConnection)ctx.Items["conn"]!;
+        await using var conn = await Database.GetConnection(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
                           SELECT
@@ -133,7 +133,7 @@ public static class Channels {
         var creationTime = Utils.GetTime();
         object? user = null;
         
-        var conn = (MySqlConnection)ctx.Items["conn"]!;
+        await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
 
         try {

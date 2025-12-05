@@ -12,7 +12,7 @@ public static class Auth {
         
         var ct = ctx.RequestAborted;
         
-        var conn = (MySqlConnection)ctx.Items["conn"]!;
+        await using var conn = await Database.GetConnection(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM user_tokens WHERE user_id = @user_id AND key_hash = @key_hash";
 
@@ -162,15 +162,13 @@ public static class Auth {
         
         var ct = context.HttpContext.RequestAborted;
         
-        await using var conn = await Database.GetConnection(ct);
-        var hasToken = await Database.HasUserToken(parsedToken.userID, keyHash, conn, ct);
+        var hasToken = await Database.HasUserToken(parsedToken.userID, keyHash, ct);
         
         if (!hasToken)
             return Results.Json(new { error = "You've been logged out. Please log in and try again." }, statusCode: 401);
         
         context.HttpContext.Items["authId"] = parsedToken.userID;
         context.HttpContext.Items["authKeyHash"] = keyHash;
-        context.HttpContext.Items["conn"] = conn;
         
         return await next(context);
     }

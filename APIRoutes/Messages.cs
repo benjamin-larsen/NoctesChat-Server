@@ -99,7 +99,7 @@ public static class Messages {
         
         var ct = ctx.RequestAborted;
         
-        var conn = (MySqlConnection)ctx.Items["conn"]!;
+        await using var conn = await Database.GetConnection(ct);
         if (!await Database.ExistsInChannel(userId, channelId, conn, null, ct))
             return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
         
@@ -186,7 +186,7 @@ public static class Messages {
         var userId = (ulong)ctx.Items["authId"]!;
         object? user = null;
 
-        var conn = (MySqlConnection)ctx.Items["conn"]!;
+        await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
 
         try {

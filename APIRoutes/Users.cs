@@ -9,8 +9,7 @@ public static class Users {
             return Results.Json(new { error = "Invalid user id." }, statusCode: 400);
         }
 
-        await using var conn = await Database.GetConnection(ct);
-        var result = await Database.GetUserById(id, false, conn, ct);
+        var result = await Database.GetUserById(id, false, ct);
 
         if (result == null)
             return Results.Json(new { error = "User doesn't exist." }, statusCode: 404);
@@ -48,9 +47,8 @@ public static class Users {
     internal static async Task<IResult> GetSelf(HttpContext ctx) {
         var ct = ctx.RequestAborted;
         
-        var conn = (MySqlConnection)ctx.Items["conn"]!;
         var userId = (ulong)ctx.Items["authId"]!;
-        var user = (await Database.GetUserById(userId, true, conn, ct))!;
+        var user = (await Database.GetUserById(userId, true, ct))!;
         
         return Results.Json(
             new {

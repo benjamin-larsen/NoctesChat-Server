@@ -144,7 +144,8 @@ public class Database {
         cmd.ExecuteNonQuery();
     }
 
-    public static async Task<bool> HasUserToken(ulong userId, byte[] tokenHash, MySqlConnection conn, CancellationToken ct) {
+    public static async Task<bool> HasUserToken(ulong userId, byte[] tokenHash, CancellationToken ct) {
+        await using var conn = await Database.GetConnection(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT 1 FROM user_tokens WHERE user_id = @id AND key_hash = @key_hash;";
 
@@ -217,7 +218,8 @@ public class Database {
         return rowsAffected == 1;
     }
 
-    public static async Task<User?> GetUserById(ulong userId, bool includeEmail, MySqlConnection conn, CancellationToken ct) {
+    public static async Task<User?> GetUserById(ulong userId, bool includeEmail, CancellationToken ct) {
+        await using var conn = await Database.GetConnection(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
                           SELECT
