@@ -188,4 +188,128 @@ public static class Channels {
             LastAccessed = creationTime
         }, statusCode: 200);
     }
+
+    internal static async Task<IResult> Update(HttpContext ctx, string _channelId) {
+        if (!ulong.TryParse(_channelId, out var channelId)) {
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
+        }
+        
+        var userId = (ulong)ctx.Items["authId"]!;
+        
+        var ct = ctx.RequestAborted;
+        
+        UpdateChannelBody? reqBody = null;
+
+        try {
+            reqBody = await ctx.Request.ReadFromJsonAsync<UpdateChannelBody>(ct);
+        } catch (JsonException) {}
+        
+        if (reqBody == null)
+            return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
+
+        var result = UpdateChannelValidator.Instance.Validate(reqBody);
+        
+        if (!result.IsValid)
+            return Results.Json(new ErrorResponse(result.Errors[0].ErrorMessage), statusCode: 400);
+        
+        var updatesOwner = reqBody.Owner != null;
+        var updatesName = reqBody.Name != null;
+
+        if (updatesOwner && reqBody.Owner == userId)
+            return Results.Json(new ErrorResponse("You are already owner"), statusCode: 400);
+
+        ChannelResponse channel;
+        
+        await using var conn = await Database.GetConnection(ct);
+        await using var txn = await conn.BeginTransactionAsync(ct);
+        
+        try {
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = """
+                                  SELECT
+                                      cm.channel_id AS id,
+                                      cm.last_accessed,
+                                      c.name,
+                                      c.member_count,
+                                      c.created_at,
+                                      c.owner
+                                  FROM channel_members cm
+                                  JOIN channels c ON cm.channel_id = c.id
+                                  WHERE cm.user_id = @user_id AND cm.channel_id = @channel_id
+                                  FOR UPDATE OF c;
+                                  """;
+                
+                cmd.Parameters.AddWithValue("@user_id", userId);
+                cmd.Parameters.AddWithValue("@channel_id", channelId);
+                
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                
+                if (!await reader.ReadAsync(ct))
+                    throw new APIException("Unknown Channel", 404);
+
+                if (reader.GetFieldValue<ulong>(5 /* Owner ID */) != userId)
+                    throw new APIException("Insufficient Permissions", 403);
+                
+                channel = ChannelResponse.FromReader(reader, false);
+                
+                if (updatesName) {
+                    channel.Name = reqBody.Name!;
+                }
+            }
+            
+            if (updatesOwner && !await Database.ExistsInChannel(reqBody.Owner!.Value, channelId, conn, txn, ct)) {
+                await txn.RollbackAsync();
+                return Results.Json(new ErrorResponse("New Owner must be a Channel Member"), statusCode: 403);
+            }
+            
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = "SELECT id, username, created_at FROM users WHERE id = @user_id;";
+                
+                cmd.Parameters.AddWithValue("@user_id", updatesOwner ? reqBody.Owner : userId);
+                
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+                if (!await reader.ReadAsync(ct)) throw new Exception("Failed to fetch new/current channel owner");
+
+                channel.Owner = UserResponse.FromReader(reader);
+            }
+
+            var updateList = new List<string>();
+
+            if (updatesName) {
+                updateList.Add("name = @name");
+            }
+            
+            if (updatesOwner) {
+                updateList.Add("owner = @owner_id");
+            }
+            
+            if (updateList.Count == 0) throw new Exception("Channel Update: list is zero");
+
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = $"""
+                                   UPDATE channels
+                                   SET {string.Join(", ", updateList)}
+                                   WHERE id = @channel_id;
+                                   """;
+                
+                cmd.Parameters.AddWithValue("@channel_id", channelId);
+                if (updatesName) cmd.Parameters.AddWithValue("@name", reqBody.Name);
+                if (updatesOwner) cmd.Parameters.AddWithValue("@owner_id", reqBody.Owner);
+            
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            
+            await txn.CommitAsync(ct);
+        }
+        catch {
+            await txn.RollbackAsync();
+            throw;
+        }
+        
+        return Results.Json(channel, statusCode: 200);
+    }
 }

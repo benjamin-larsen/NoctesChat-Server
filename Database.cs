@@ -287,6 +287,20 @@ public class Database {
         
         return value != null;
     }
+
+    public static async Task<bool> IsChannelOwner(
+        ulong userId, ulong channelId, MySqlConnection conn, MySqlTransaction? transaction, CancellationToken ct) {
+        await using var cmd  = conn.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = $"SELECT 1 FROM channels WHERE id = @channel_id AND owner = @user_id FOR UPDATE;";
+        
+        cmd.Parameters.AddWithValue("@user_id", userId);
+        cmd.Parameters.AddWithValue("@channel_id", channelId);
+
+        var value = await cmd.ExecuteScalarAsync(ct);
+        
+        return value != null;
+    }
     
     public static async Task<MySqlConnection> GetConnection(CancellationToken ct)
     {
