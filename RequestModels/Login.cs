@@ -5,10 +5,10 @@ namespace NoctesChat.RequestModels;
 
 public class LoginBody {
     [JsonPropertyName("email")]
-    public string Email { get; set; }
+    public required string Email { get; set; }
     
     [JsonPropertyName("password")]
-    public string Password { get; set; }
+    public required string Password { get; set; }
 }
 
 public class LoginValidator : AbstractValidator<LoginBody>

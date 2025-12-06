@@ -1,7 +1,9 @@
 ﻿using System.Security.Cryptography;
 using System.Text.Json;
 using MySqlConnector;
+using NoctesChat.DataModels;
 using NoctesChat.RequestModels;
+using NoctesChat.ResponseModels;
 
 namespace NoctesChat.APIRoutes;
 
@@ -22,7 +24,7 @@ public static class Auth {
         var rowsDeleted = await cmd.ExecuteNonQueryAsync(ct);
 
         if (rowsDeleted != 1)
-            return Results.Json(new { error = "Logout Failed." }, statusCode: 500);
+            return Results.Json(new ErrorResponse("Logout Failed."), statusCode: 500);
 
         return Results.Json(new { ok = true }, statusCode: 200);
     }
@@ -37,33 +39,33 @@ public static class Auth {
         } catch (JsonException) {}
         
         if (reqBody == null)
-            return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
 
         var result = LoginValidator.Instance.Validate(reqBody);
         
         if (!result.IsValid)
-            return Results.Json(new { error = result.Errors[0].ErrorMessage }, statusCode: 400);
+            return Results.Json(new ErrorResponse(result.Errors[0].ErrorMessage), statusCode: 400);
         
         byte[] token;
-        User? user;
+        UserLoginData? loginData;
         
         await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
 
         try {
-            user = await Database.GetUserForLogin(reqBody.Email, conn, txn, ct);
+            loginData = await Database.GetUserForLogin(reqBody.Email, conn, txn, ct);
             
-            if (user == null || !CryptographicOperations.FixedTimeEquals(
-                    User.HashPassword(reqBody.Password, user.PasswordSalt!), 
-                    user.PasswordHash!)) {
+            if (loginData == null || !CryptographicOperations.FixedTimeEquals(
+                    User.HashPassword(reqBody.Password, loginData.PasswordSalt!), 
+                    loginData.PasswordHash!)) {
                 await txn.RollbackAsync();
-                return Results.Json(new { error = "Email or password is wrong." }, statusCode: 400);
+                return Results.Json(new ErrorResponse("Email or password is wrong."), statusCode: 400);
             }
             
             token = UserToken.GenerateToken();
             var tokenHash = SHA256.HashData(token);
 
-            if (!await Database.InsertUserToken(user.ID, tokenHash, Utils.GetTime(), conn, txn, ct))
+            if (!await Database.InsertUserToken(loginData.ID, tokenHash, Utils.GetTime(), conn, txn, ct))
                 throw new Exception("Failed to insert user token into Database.");
 
             await txn.CommitAsync(ct);
@@ -73,7 +75,7 @@ public static class Auth {
             throw;
         }
         
-        return Results.Json(new { token = UserToken.EncodeToken(user.ID, token), id = user.ID.ToString() }, statusCode: 200);
+        return Results.Json(new { token = UserToken.EncodeToken(loginData.ID, token), id = loginData.ID.ToString() }, statusCode: 200);
     }
 
     internal static async Task<IResult> Register(HttpContext ctx) {
@@ -86,12 +88,12 @@ public static class Auth {
         } catch (JsonException) {}
         
         if (reqBody == null)
-            return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
 
         var result = RegisterValidator.Instance.Validate(reqBody);
         
         if (!result.IsValid)
-            return Results.Json(new { error = result.Errors[0].ErrorMessage }, statusCode: 400);
+            return Results.Json(new ErrorResponse(result.Errors[0].ErrorMessage), statusCode: 400);
 
         var (pwdHash, pwdSalt) = User.HashPassword(reqBody.Password);
 
@@ -129,10 +131,10 @@ public static class Auth {
 
             switch (index) {
                 case "users_email":
-                    return Results.Json(new { error = "Email already exists." }, statusCode: 400);
+                    return Results.Json(new ErrorResponse("Email already exists."), statusCode: 400);
                 
                 case "users_username":
-                    return Results.Json(new { error = "Username already exists." }, statusCode: 400);
+                    return Results.Json(new ErrorResponse("Username already exists."), statusCode: 400);
                 
                 default:
                     throw;
@@ -151,12 +153,12 @@ public static class Auth {
         var headers = context.HttpContext.Request.Headers;
 
         if (!headers.TryGetValue("Authorization", out var key))
-            return Results.Json(new { error = "You need to be logged in." }, statusCode: 401);
+            return Results.Json(new ErrorResponse("You need to be logged in."), statusCode: 401);
 
         var parsedToken = UserToken.DecodeToken(key!);
         
         if (!parsedToken.success)
-            return Results.Json(new { error = "Invalid token." }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid token."), statusCode: 400);
         
         var keyHash = SHA256.HashData(parsedToken.token);
         
@@ -165,7 +167,7 @@ public static class Auth {
         var hasToken = await Database.HasUserToken(parsedToken.userID, keyHash, ct);
         
         if (!hasToken)
-            return Results.Json(new { error = "You've been logged out. Please log in and try again." }, statusCode: 401);
+            return Results.Json(new ErrorResponse("You've been logged out. Please log in and try again."), statusCode: 401);
         
         context.HttpContext.Items["authId"] = parsedToken.userID;
         context.HttpContext.Items["authKeyHash"] = keyHash;

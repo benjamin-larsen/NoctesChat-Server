@@ -5,10 +5,10 @@ namespace NoctesChat.RequestModels;
 
 public class CreateChannelBody {
     [JsonPropertyName("name")]
-    public string Name { get; set; }
+    public required string Name { get; set; }
     
     [JsonPropertyName("members")]
-    public ulong[] Members { get; set; }
+    public required ulong[] Members { get; set; }
 }
 
 public class CreateChannelValidator : AbstractValidator<CreateChannelBody>

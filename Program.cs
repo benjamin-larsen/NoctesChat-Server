@@ -1,6 +1,7 @@
 using NoctesChat;
 using dotenv.net;
 using Microsoft.AspNetCore.Diagnostics;
+using NoctesChat.ResponseModels;
 
 DotEnv.Load();
 Database.Setup();
@@ -43,17 +44,13 @@ app.UseExceptionHandler(new ExceptionHandlerOptions {
         if (exceptionHandlerPathFeature?.Error is APIException ex) {
             context.Response.StatusCode = ex.StatusCode;
 
-            await context.Response.WriteAsJsonAsync(new {
-                error = ex.Message
-            });
+            await context.Response.WriteAsJsonAsync(new ErrorResponse(ex.Message));
             return;
         }
         
         context.Response.StatusCode = 500;
 
-        await context.Response.WriteAsJsonAsync(new {
-            error = "Internal Server Error"
-        });
+        await context.Response.WriteAsJsonAsync(new ErrorResponse("Internal Server Error"));
     }
 });
 

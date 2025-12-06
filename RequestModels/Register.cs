@@ -5,13 +5,13 @@ namespace NoctesChat.RequestModels;
 
 public class RegisterBody {
     [JsonPropertyName("username")]
-    public string Username { get; set; }
+    public required string Username { get; set; }
     
     [JsonPropertyName("email")]
-    public string Email { get; set; }
+    public required string Email { get; set; }
     
     [JsonPropertyName("password")]
-    public string Password { get; set; }
+    public required string Password { get; set; }
 }
 
 public class RegisterValidator : AbstractValidator<RegisterBody>

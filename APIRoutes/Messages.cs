@@ -1,13 +1,14 @@
 ﻿using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.RequestModels;
+using NoctesChat.ResponseModels;
 
 namespace NoctesChat.APIRoutes;
 
 public static class Messages {
     internal static async Task<IResult> GetList(HttpContext ctx, string _channelId) {
         if (!ulong.TryParse(_channelId, out var channelId)) {
-            return Results.Json(new { error = "Invalid channel id." }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
         }
 
         var after = Utils.GetQueryParameter<ulong?>(
@@ -29,7 +30,7 @@ public static class Messages {
         );
         
         if (before != null && after != null)
-            return Results.Json(new { error = "Both 'after' and 'before' parameters defined, you can only use one." }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Both 'after' and 'before' parameters defined, you can only use one."), statusCode: 400);
         
         var includeSelf = Utils.GetQueryParameter<bool>(
             ctx.Request.Query, "include_self", false, (rawValue) => {
@@ -73,23 +74,23 @@ public static class Messages {
         if (useTimestamp) {
             if (before != null) {
                 if (before < (ulong)Database.MsgIDGenerator.BaseTimestamp)
-                    return Results.Json(new { error = "'before' underflow min timestamp." }, statusCode: 400);
+                    return Results.Json(new ErrorResponse("'before' underflow min timestamp."), statusCode: 400);
                 
                 if (before > (ulong)(Database.MsgIDGenerator.BaseTimestamp + SnowflakeGen.maxTimestamp))
-                    return Results.Json(new { error = "'before' overflow max timestamp." }, statusCode: 400);
+                    return Results.Json(new ErrorResponse("'before' overflow max timestamp."), statusCode: 400);
                 
                 before = Database.MsgIDGenerator.ConvertFromTimestamp((long)before, includeSelf ? 0 : SnowflakeGen.maxSequence);
             } else if (after != null) {
                 if (after < (ulong)Database.MsgIDGenerator.BaseTimestamp)
-                    return Results.Json(new { error = "'after' underflow min timestamp." }, statusCode: 400);
+                    return Results.Json(new ErrorResponse("'after' underflow min timestamp."), statusCode: 400);
                 
                 if (after > (ulong)(Database.MsgIDGenerator.BaseTimestamp + SnowflakeGen.maxTimestamp))
-                    return Results.Json(new { error = "'after' overflow max timestamp." }, statusCode: 400);
+                    return Results.Json(new ErrorResponse("'after' overflow max timestamp."), statusCode: 400);
                 
                 after = Database.MsgIDGenerator.ConvertFromTimestamp((long)after, includeSelf ? SnowflakeGen.maxSequence : 0);
             }
             else
-                return Results.Json(new { error = "You must specify 'after' or 'before' to use timestamp." }, statusCode: 400);
+                return Results.Json(new ErrorResponse("You must specify 'after' or 'before' to use timestamp."), statusCode: 400);
         }
         
         // around
@@ -101,7 +102,7 @@ public static class Messages {
         
         await using var conn = await Database.GetConnection(ct);
         if (!await Database.ExistsInChannel(userId, channelId, conn, null, ct))
-            return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
+            return Results.Json(new ErrorResponse("Unknown Channel"), statusCode: 404);
         
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
@@ -139,21 +140,8 @@ public static class Messages {
                 hasMore = true;
                 break;
             }
-
-            var hasAuthor = !reader.IsDBNull(4 /* Author ID */);
             
-            messageList.Add(new {
-                id = reader.GetFieldValue<ulong>(0 /* Message ID */).ToString(),
-                author = hasAuthor ? new {
-                    id = reader.GetFieldValue<ulong>(4 /* Author ID */).ToString(),
-                    username = reader.GetFieldValue<string>(5 /* Author Username */),
-                    created_at = reader.GetFieldValue<long>(6 /* Author Created At */),
-                } : null,
-                content = reader.GetFieldValue<string>(1 /* Message Content */),
-                timestamp = reader.GetFieldValue<long>(2 /* Message Timestamp */),
-                edited = reader.IsDBNull(3 /* Message Edited Timestamp */) ?
-                    (long?)null : reader.GetFieldValue<long>(3 /* Message Edited Timestamp */)
-            });
+            messageList.Add(MessageResponse.FromReader(reader));
         }
 
         return Results.Json(new { messages = messageList, has_more = hasMore }, statusCode: 200);
@@ -161,7 +149,7 @@ public static class Messages {
     
     internal static async Task<IResult> Post(HttpContext ctx, string _channelId) {
         if (!ulong.TryParse(_channelId, out var channelId)) {
-            return Results.Json(new { error = "Invalid channel id." }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
         }
         
         var ct = ctx.RequestAborted;
@@ -173,18 +161,18 @@ public static class Messages {
         } catch (JsonException) {}
         
         if (reqBody == null)
-            return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
 
         var result = PostMessageValidator.Instance.Validate(reqBody);
         
         if (!result.IsValid)
-            return Results.Json(new { error = result.Errors[0].ErrorMessage }, statusCode: 400);
+            return Results.Json(new ErrorResponse(result.Errors[0].ErrorMessage), statusCode: 400);
 
         ulong messageId;
         long creationTime;
 
         var userId = (ulong)ctx.Items["authId"]!;
-        object? user = null;
+        UserResponse? user = null;
 
         await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
@@ -200,16 +188,12 @@ public static class Messages {
 
                 if (!await reader.ReadAsync(ct)) throw new Exception("Failed to get user");
 
-                user = new {
-                    id = reader.GetFieldValue<ulong>(0 /* User ID */).ToString(),
-                    username = reader.GetFieldValue<string>(1 /* Username */),
-                    created_at = reader.GetFieldValue<long>(2 /* Created At */),
-                };
+                user = UserResponse.FromReader(reader);
             }
 
             if (!await Database.ExistsInChannel(userId, channelId, conn, txn, ct)) {
                 await txn.RollbackAsync();
-                return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
+                return Results.Json(new ErrorResponse("Unknown Channel"), statusCode: 404);
             }
             
             messageId = await Database.MsgIDGenerator.Generate(ct);
@@ -231,7 +215,7 @@ public static class Messages {
             
                 var rowsInserted = await cmd.ExecuteNonQueryAsync(ct);
             
-                if (rowsInserted != 1) throw new  Exception("Failed to insert message.");
+                if (rowsInserted != 1) throw new Exception("Failed to insert message.");
             }
 
             await txn.CommitAsync(ct);
@@ -243,12 +227,11 @@ public static class Messages {
         
         // Send WS stuff here
         
-        return Results.Json(new {
-            id = messageId.ToString(),
-            author = user,
-            content = reqBody.Content,
-            timestamp = creationTime,
-            edited = (long?)null
+        return Results.Json(new MessageResponse {
+            ID = messageId,
+            Author = user,
+            Content = reqBody.Content,
+            Timestamp = creationTime
         }, statusCode: 200);
     }
 }

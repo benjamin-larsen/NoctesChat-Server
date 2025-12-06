@@ -2,13 +2,14 @@
 using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.RequestModels;
+using NoctesChat.ResponseModels;
 
 namespace NoctesChat.APIRoutes;
 
 public static class Channels {
     internal static async Task<IResult> GetList(HttpContext ctx) {
         var userId = (ulong)ctx.Items["authId"]!;
-        var channelList = new List<object>();
+        var channelList = new List<ChannelResponse>();
         
         var ct = ctx.RequestAborted;
         
@@ -35,20 +36,7 @@ public static class Channels {
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
         while (await reader.ReadAsync(ct)) {
-            var hasOwner = !reader.IsDBNull(5 /* Owner ID */);
-            
-            channelList.Add(new {
-                id = reader.GetFieldValue<ulong>(0 /* Channel ID */).ToString(),
-                name = reader.GetFieldValue<string>(2 /* Channel Name */),
-                owner = hasOwner ? new {
-                    id = reader.GetFieldValue<ulong>(5 /* Owner ID */).ToString(),
-                    username = reader.GetFieldValue<string>(6 /* Owner Username */),
-                    created_at = reader.GetFieldValue<long>(7 /* Owner Created At */),
-                } : null,
-                member_count = reader.GetFieldValue<uint>(3 /* Channel Member Count */),
-                created_at = reader.GetFieldValue<long>(4 /* Channel Created At */),
-                last_accessed = reader.GetFieldValue<long>(1 /* Last Accessed */)
-            });
+            channelList.Add(ChannelResponse.FromReader(reader));
         }
         
         return Results.Json(new {
@@ -58,7 +46,7 @@ public static class Channels {
 
     internal static async Task<IResult> GetSingle(HttpContext ctx, string _channelId) {
         if (!ulong.TryParse(_channelId, out var channelId)) {
-            return Results.Json(new { error = "Invalid channel id." }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
         }
         
         var userId = (ulong)ctx.Items["authId"]!;
@@ -89,22 +77,9 @@ public static class Channels {
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
         if (!await reader.ReadAsync(ct))
-            return Results.Json(new { error = "Unknown Channel." }, statusCode: 404);
+            return Results.Json(new ErrorResponse("Unknown Channel"), statusCode: 404);
         
-        var hasOwner = !reader.IsDBNull(5 /* Owner ID */);
-            
-        return Results.Json(new {
-            id = reader.GetFieldValue<ulong>(0 /* Channel ID */).ToString(),
-            name = reader.GetFieldValue<string>(2 /* Channel Name */),
-            owner = hasOwner ? new {
-                id = reader.GetFieldValue<ulong>(5 /* Owner ID */).ToString(),
-                username = reader.GetFieldValue<string>(6 /* Owner Username */),
-                created_at = reader.GetFieldValue<long>(7 /* Owner Created At */),
-            } : null,
-            member_count = reader.GetFieldValue<uint>(3 /* Channel Member Count */),
-            created_at = reader.GetFieldValue<long>(4 /* Channel Created At */),
-            last_accessed = reader.GetFieldValue<long>(1 /* Last Accessed */)
-        }, statusCode: 200);
+        return Results.Json(ChannelResponse.FromReader(reader), statusCode: 200);
     }
 
     internal static async Task<IResult> Create(HttpContext ctx) {
@@ -119,19 +94,19 @@ public static class Channels {
         } catch (JsonException) {}
         
         if (reqBody == null)
-            return Results.Json(new { error = "Invalid JSON" }, statusCode: 400);
+            return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
 
         var result = CreateChannelValidator.Instance.Validate(reqBody);
         
         if (!result.IsValid)
-            return Results.Json(new { error = result.Errors[0].ErrorMessage }, statusCode: 400);
+            return Results.Json(new ErrorResponse(result.Errors[0].ErrorMessage), statusCode: 400);
         
         if (reqBody.Members.Contains(userId))
-            return Results.Json(new { error = "You are already implicitly added in this channel." }, statusCode: 400);
+            return Results.Json(new ErrorResponse("You are already implicitly added in this channel."), statusCode: 400);
 
         var channelId = await Database.ChannelIDGenerator.Generate(ct);
         var creationTime = Utils.GetTime();
-        object? user = null;
+        UserResponse? user = null;
         
         await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
@@ -147,11 +122,7 @@ public static class Channels {
 
                 if (!await reader.ReadAsync(ct)) throw new Exception("Failed to get user");
 
-                user = new {
-                    id = reader.GetFieldValue<ulong>(0 /* User ID */).ToString(),
-                    username = reader.GetFieldValue<string>(1 /* Username */),
-                    created_at = reader.GetFieldValue<long>(2 /* Created At */),
-                };
+                user = UserResponse.FromReader(reader);
             }
 
             await using (var cmd = conn.CreateCommand()) {
@@ -199,7 +170,7 @@ public static class Channels {
             await txn.RollbackAsync();
             
             if (ex.Message.Contains("FOREIGN KEY (`user_id`)"))
-                return Results.Json(new { error = "One or more members doesn't exist." }, statusCode: 400);
+                return Results.Json(new ErrorResponse("One or more members doesn't exist."), statusCode: 400);
 
             throw;
         }
@@ -208,12 +179,13 @@ public static class Channels {
             throw;
         }
 
-        return Results.Json(new {
-            id = channelId.ToString(),
-            name = reqBody.Name,
-            owner = user,
-            member_count = reqBody.Members.Length + 1,
-            created_at = creationTime,
+        return Results.Json(new ChannelResponse {
+            ID = channelId,
+            Name = reqBody.Name,
+            Owner = user,
+            MemberCount = (uint)reqBody.Members.Length + 1,
+            CreatedAt = creationTime,
+            LastAccessed = creationTime
         }, statusCode: 200);
     }
 }

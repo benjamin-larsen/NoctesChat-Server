@@ -1,4 +1,5 @@
 ﻿using NoctesChat.APIRoutes;
+using NoctesChat.ResponseModels;
 
 namespace NoctesChat;
 
@@ -12,7 +13,7 @@ public class APIException : Exception {
 
 public class APIHandler {
     private static IResult NotFound() {
-        return Results.Json(new { error = "API Endpoint: Not Found." }, statusCode: 404);
+        return Results.Json(new ErrorResponse("API Endpoint: Not Found."), statusCode: 404);
     }
 
     public static void Use(WebApplication app) {

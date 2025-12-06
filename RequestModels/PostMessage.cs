@@ -5,7 +5,7 @@ namespace NoctesChat.RequestModels;
 
 public class PostMessageBody {
     [JsonPropertyName("content")]
-    public string Content { get; set; }
+    public required string Content { get; set; }
 }
 
 public class PostMessageValidator : AbstractValidator<PostMessageBody>

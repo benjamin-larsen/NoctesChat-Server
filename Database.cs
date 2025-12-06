@@ -1,4 +1,6 @@
 ﻿using MySqlConnector;
+using NoctesChat.DataModels;
+using NoctesChat.ResponseModels;
 
 namespace NoctesChat;
 
@@ -218,7 +220,7 @@ public class Database {
         return rowsAffected == 1;
     }
 
-    public static async Task<User?> GetUserById(ulong userId, bool includeEmail, CancellationToken ct) {
+    public static async Task<UserResponse?> GetUserById(ulong userId, bool includeEmail, CancellationToken ct) {
         await using var conn = await Database.GetConnection(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
@@ -235,16 +237,20 @@ public class Database {
 
         var field = 0;
 
-        return new User {
-            ID = reader.GetUInt64(field++),
-            Username = reader.GetString(field++),
-            Email = includeEmail ? reader.GetString(field++) : null,
-            EmailVerified = includeEmail && reader.GetBoolean(field++),
-            CreatedAt = reader.GetFieldValue<long>(field),
-        };
+        if (includeEmail) {
+            return new AuthenticatedUserResponse {
+                ID = reader.GetUInt64(field++),
+                Username = reader.GetString(field++),
+                Email = reader.GetString(field++),
+                EmailVerified = reader.GetBoolean(field++),
+                CreatedAt = reader.GetFieldValue<long>(field),
+            };
+        }
+
+        return UserResponse.FromReader(reader);
     }
     
-    public static async Task<User?> GetUserForLogin(
+    public static async Task<UserLoginData?> GetUserForLogin(
         string email, MySqlConnection conn, MySqlTransaction transaction, CancellationToken ct) {
         await using var cmd  = conn.CreateCommand();
         cmd.Transaction = transaction;
@@ -261,7 +267,7 @@ public class Database {
 
         if (!await reader.ReadAsync(ct)) return null;
         
-        return new User {
+        return new UserLoginData {
             ID = reader.GetUInt64(0 /* id */),
             PasswordHash = reader.GetFieldValue<byte[]>(1 /* password_hash */),
             PasswordSalt = reader.GetFieldValue<byte[]>(2 /* password_salt */),
