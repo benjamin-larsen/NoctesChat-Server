@@ -312,4 +312,42 @@ public static class Channels {
         
         return Results.Json(channel, statusCode: 200);
     }
+
+    internal static async Task<IResult> Delete(HttpContext ctx, string _channelId) {
+        if (!ulong.TryParse(_channelId, out var channelId)) {
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
+        }
+        
+        var userId = (ulong)ctx.Items["authId"]!;
+        
+        var ct = ctx.RequestAborted;
+        
+        await using var conn = await Database.GetConnection(ct);
+        await using var txn = await conn.BeginTransactionAsync(ct);
+
+        try {
+            if (!await Database.IsChannelOwner(userId, channelId, conn, txn, ct)) {
+                await txn.RollbackAsync();
+                return Results.Json(new ErrorResponse("Insufficient Permissions"), statusCode: 403);
+            }
+            
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = txn;
+            cmd.CommandText = "DELETE FROM channels WHERE id = @channel_id;";
+            
+            cmd.Parameters.AddWithValue("@channel_id", channelId);
+            
+            var rowsDeleted = await cmd.ExecuteNonQueryAsync(ct);
+
+            if (rowsDeleted != 1) throw new Exception("Failed to delete channel");
+            
+            await txn.CommitAsync(ct);
+        }
+        catch {
+            await txn.RollbackAsync();
+            throw;
+        }
+        
+        return Results.Json(new { ok = true }, statusCode: 200);
+    }
 }

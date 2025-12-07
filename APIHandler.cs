@@ -33,8 +33,9 @@ public class APIHandler {
         apiRouter.MapGet("/channels/{_channelId}", Channels.GetSingle).AddEndpointFilter(Auth.Middleware);
         apiRouter.MapGet("/channels", (Delegate)Channels.GetList).AddEndpointFilter(Auth.Middleware);
         apiRouter.MapPost("/channels", (Delegate)Channels.Create).AddEndpointFilter(Auth.Middleware);
-        
         apiRouter.MapPatch("/channels/{_channelId}", Channels.Update).AddEndpointFilter(Auth.Middleware);
+        apiRouter.MapDelete("/channels/{_channelId}", Channels.Delete).AddEndpointFilter(Auth.Middleware);
+        
         // Messages
         apiRouter.MapPost("/channels/{_channelId}/messages", Messages.Post).AddEndpointFilter(Auth.Middleware);
         apiRouter.MapGet("/channels/{_channelId}/messages", Messages.GetList).AddEndpointFilter(Auth.Middleware);
