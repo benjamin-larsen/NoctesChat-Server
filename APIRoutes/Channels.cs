@@ -371,4 +371,161 @@ public static class Channels {
         
         return Results.Json(new { ok = true }, statusCode: 200);
     }
+
+    internal static async Task<IResult> AddMember(HttpContext ctx, string _channelId, string _memberId) {
+        if (!ulong.TryParse(_channelId, out var channelId)) {
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
+        }
+        
+        if (!ulong.TryParse(_memberId, out var memberId)) {
+            return Results.Json(new ErrorResponse("Invalid user id."), statusCode: 400);
+        }
+        
+        var userId = (ulong)ctx.Items["authId"]!;
+        
+        var ct = ctx.RequestAborted;
+
+        ChannelResponse channel;
+        
+        await using var conn = await Database.GetConnection(ct);
+        await using var txn = await conn.BeginTransactionAsync(ct);
+
+        try {
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = """
+                                  SELECT
+                                      cm.channel_id AS id,
+                                      cm.last_accessed,
+                                      c.name,
+                                      c.member_count,
+                                      c.created_at,
+                                      o.id AS owner_id,
+                                      o.username AS owner_username,
+                                      o.created_at AS owner_created_at
+                                  FROM channel_members cm
+                                  JOIN channels c ON cm.channel_id = c.id
+                                  LEFT JOIN users o ON c.owner = o.id
+                                  WHERE cm.user_id = @user_id AND cm.channel_id = @channel_id
+                                  FOR UPDATE OF c;
+                                  """;
+
+                cmd.Parameters.AddWithValue("@user_id", userId);
+                cmd.Parameters.AddWithValue("@channel_id", channelId);
+
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+                if (!await reader.ReadAsync(ct))
+                    throw new APIException("Unknown Channel", 404);
+
+                if (reader.GetFieldValue<ulong>(5 /* Owner ID */) != userId)
+                    throw new APIException("Insufficient Permissions", 403);
+
+                channel = ChannelResponse.FromReader(reader);
+                channel.LastAccessed = Utils.GetTime();
+                channel.MemberCount++;
+            }
+
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = """
+                                  INSERT INTO channel_members (user_id, channel_id, last_accessed)
+                                  VALUES (@member_id, @channel_id, @last_accessed);
+                                  """;
+
+                cmd.Parameters.AddWithValue("@member_id", memberId);
+                cmd.Parameters.AddWithValue("@channel_id", channelId);
+                cmd.Parameters.AddWithValue("@last_accessed", channel.LastAccessed);
+
+                var rowsAdded = await cmd.ExecuteNonQueryAsync(ct);
+
+                if (rowsAdded != 1) throw new Exception("Failed to add member");
+            }
+
+            await txn.CommitAsync(ct);
+        }
+        catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.DuplicateKeyEntry) {
+            await txn.RollbackAsync();
+            
+            var index = Utils.DecodeDuplicateKeyError(ex.Message);
+            
+            if (index == "PRIMARY")
+                return Results.Json(new ErrorResponse("User is already a member of this channel"), statusCode: 400);
+            
+            throw;
+        }
+        catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.NoReferencedRow2) {
+            await txn.RollbackAsync();
+            
+            if (ex.Message.Contains("FOREIGN KEY (`user_id`)"))
+                return Results.Json(new ErrorResponse("User doesn't exist."), statusCode: 404);
+
+            throw;
+        }
+        catch {
+            await txn.RollbackAsync();
+            throw;
+        }
+        
+        WSServer.AnnounceChannel(memberId, new WSPushChannel {
+            Channel = channel
+        });
+
+        return Results.Json(new { ok = true });
+    }
+    
+    internal static async Task<IResult> RemoveMember(HttpContext ctx, string _channelId, string _memberId) {
+        if (!ulong.TryParse(_channelId, out var channelId)) {
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
+        }
+        
+        if (!ulong.TryParse(_memberId, out var memberId)) {
+            return Results.Json(new ErrorResponse("Invalid user id."), statusCode: 400);
+        }
+        
+        var userId = (ulong)ctx.Items["authId"]!;
+        
+        if (userId == memberId)
+            return Results.Json(new ErrorResponse("You can't remove yourself."), statusCode: 400);
+        
+        var ct = ctx.RequestAborted;
+        
+        await using var conn = await Database.GetConnection(ct);
+        await using var txn = await conn.BeginTransactionAsync(ct);
+
+        try {
+            if (!await Database.IsChannelOwner(userId, channelId, conn, txn, ct)) {
+                await txn.RollbackAsync();
+                return Results.Json(new ErrorResponse("Insufficient Permissions"), statusCode: 403);
+            }
+
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = """
+                                  DELETE FROM channel_members
+                                  WHERE user_id = @member_id AND channel_id = @channel_id;
+                                  """;
+
+                cmd.Parameters.AddWithValue("@member_id", memberId);
+                cmd.Parameters.AddWithValue("@channel_id", channelId);
+
+                var rowsRemoved = await cmd.ExecuteNonQueryAsync(ct);
+
+                if (rowsRemoved != 1) {
+                    await txn.RollbackAsync();
+                    return Results.Json(new ErrorResponse("User is not a member of this channel."), statusCode: 400);
+                }
+            }
+
+            await txn.CommitAsync(ct);
+        }
+        catch {
+            await txn.RollbackAsync();
+            throw;
+        }
+        
+        WSServer.LeaveChannel(memberId, channelId);
+
+        return Results.Json(new { ok = true });
+    }
 }
