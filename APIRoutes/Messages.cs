@@ -1,6 +1,4 @@
-﻿using System.Text.Json;
-using MySqlConnector;
-using NoctesChat.RequestModels;
+﻿using NoctesChat.RequestModels;
 using NoctesChat.ResponseModels;
 using NoctesChat.WSRequestModels;
 
@@ -33,7 +31,7 @@ public static class Messages {
         if (before != null && after != null)
             return Results.Json(new ErrorResponse("Both 'after' and 'before' parameters defined, you can only use one."), statusCode: 400);
         
-        var includeSelf = Utils.GetQueryParameter<bool>(
+        var includeSelf = Utils.GetQueryParameter(
             ctx.Request.Query, "include_self", false, (rawValue) => {
                 if (!Utils.TryParseBool(rawValue, out var parsedValue))
                     throw new APIException($"Invalid value for 'include_self'", 400);
@@ -45,7 +43,7 @@ public static class Messages {
             }
         );
         
-        var limit = Utils.GetQueryParameter<int>(
+        var limit = Utils.GetQueryParameter(
             ctx.Request.Query, "limit", 50, (rawValue) => {
                 if (!int.TryParse(rawValue, out var parsedValue))
                     throw new APIException($"Invalid value for 'limit'", 400);
@@ -60,7 +58,7 @@ public static class Messages {
             }
         );
         
-        var useTimestamp = Utils.GetQueryParameter<bool>(
+        var useTimestamp = Utils.GetQueryParameter(
             ctx.Request.Query, "use_timestamp", false, (rawValue) => {
                 if (!Utils.TryParseBool(rawValue, out var parsedValue))
                     throw new APIException($"Invalid value for 'use_timestamp'", 400);
@@ -127,9 +125,9 @@ public static class Messages {
         cmd.Parameters.AddWithValue("@channel_id", channelId);
 
         if (after != null) {
-            cmd.Parameters.AddWithValue("@after_id", after!);
+            cmd.Parameters.AddWithValue("@after_id", after);
         } else if (before != null) {
-            cmd.Parameters.AddWithValue("@before_id", before!);
+            cmd.Parameters.AddWithValue("@before_id", before);
         }
 
         var hasMore = false;
@@ -234,6 +232,7 @@ public static class Messages {
         };
         
         WSServer.Channels.SendMessage(channelId, new WSPushMessage {
+            Channel = channelId,
             Message = msg
         });
         

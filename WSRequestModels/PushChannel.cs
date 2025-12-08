@@ -8,7 +8,7 @@ public class WSPushChannel {
     public string Type { get; } = "push_channel";
     
     [JsonPropertyName("channel")]
-    public ChannelResponse Channel { get; set; }
+    public required ChannelResponse Channel { get; set; }
 }
 
 public class WSUpdateChannel {
@@ -16,7 +16,7 @@ public class WSUpdateChannel {
     public string Type { get; } = "update_channel";
     
     [JsonPropertyName("channel")]
-    public ChannelResponse Channel { get; set; }
+    public required ChannelResponse Channel { get; set; }
 }
 
 public class WSDeleteChannel {

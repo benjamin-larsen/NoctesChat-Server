@@ -1,5 +1,4 @@
 ﻿using System.Text;
-using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.RequestModels;
 using NoctesChat.ResponseModels;
@@ -107,7 +106,7 @@ public static class Channels {
 
         var channelId = await Database.ChannelIDGenerator.Generate(ct);
         var creationTime = Utils.GetTime();
-        UserResponse? user = null;
+        UserResponse? user;
         
         await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
@@ -234,6 +233,7 @@ public static class Channels {
             return Results.Json(new ErrorResponse("You are already owner"), statusCode: 400);
 
         ChannelResponse channel;
+        var doesUpdate = false;
         
         await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
@@ -274,6 +274,7 @@ public static class Channels {
             }
             
             if (updatesOwner && !await Database.ExistsInChannel(reqBody.Owner!.Value, channelId, conn, txn, ct)) {
+            if (updatesOwner && !await Database.ExistsInChannel(reqBody.Owner!.Value, channelId, conn, txn, ct, true)) {
                 await txn.RollbackAsync();
                 return Results.Json(new ErrorResponse("New Owner must be a Channel Member"), statusCode: 403);
             }
@@ -289,6 +290,11 @@ public static class Channels {
                 if (!await reader.ReadAsync(ct)) throw new Exception("Failed to fetch new/current channel owner");
 
                 channel.Owner = UserResponse.FromReader(reader);
+            }
+
+            if (!doesUpdate) {
+                await txn.RollbackAsync();
+                return Results.Json(channel, statusCode: 200);
             }
 
             var updateList = new List<string>();

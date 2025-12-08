@@ -7,6 +7,9 @@ public class WSPushMessage {
     [JsonPropertyName("type")]
     public string Type { get; } = "push_message";
     
+    [JsonPropertyName("channel"), JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+    public ulong Channel { get; set; }
+    
     [JsonPropertyName("message")]
-    public MessageResponse Message { get; set; }
+    public required MessageResponse Message { get; set; }
 }

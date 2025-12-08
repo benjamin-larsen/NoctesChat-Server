@@ -1,6 +1,5 @@
 ﻿using System.Net.WebSockets;
 using System.Security.Cryptography;
-using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.DataModels;
 using NoctesChat.RequestModels;

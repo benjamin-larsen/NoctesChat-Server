@@ -1,5 +1,4 @@
 ﻿using System.Text.RegularExpressions;
-using MySqlConnector;
 using NoctesChat.ResponseModels;
 
 namespace NoctesChat.APIRoutes;

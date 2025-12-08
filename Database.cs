@@ -15,7 +15,7 @@ public class Database {
         using var conn = new MySqlConnection(connectionUrl);
         conn.Open();
         
-        using var cmd = conn.CreateCommand()!;
+        using var cmd = conn.CreateCommand();
         
         // Setup Database
         cmd.CommandText = "CREATE DATABASE IF NOT EXISTS `noctes_chat` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;";
@@ -288,10 +288,10 @@ public class Database {
     }
 
     public static async Task<bool> ExistsInChannel(
-        ulong userId, ulong channelId, MySqlConnection conn, MySqlTransaction? transaction, CancellationToken ct) {
+        ulong userId, ulong channelId, MySqlConnection conn, MySqlTransaction? transaction, CancellationToken ct, bool shouldLock = false) {
         await using var cmd  = conn.CreateCommand();
         cmd.Transaction = transaction;
-        cmd.CommandText = $"SELECT 1 FROM channel_members WHERE user_id = @user_id AND channel_id = @channel_id;";
+        cmd.CommandText = $"SELECT 1 FROM channel_members WHERE user_id = @user_id AND channel_id = @channel_id{(shouldLock ? " FOR UPDATE" : "")};";
         
         cmd.Parameters.AddWithValue("@user_id", userId);
         cmd.Parameters.AddWithValue("@channel_id", channelId);

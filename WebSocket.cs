@@ -3,8 +3,6 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Channels;
-using NoctesChat.APIRoutes;
 using NoctesChat.ResponseModels;
 using NoctesChat.WSRequestModels;
 
@@ -22,8 +20,8 @@ public class WSSocket {
     private readonly WebSocket _socket;
     private readonly CancellationToken _ct;
 
-    private ulong? _authId = null;
-    private UserToken? _userToken = null;
+    private ulong? _authId;
+    private UserToken? _userToken;
     private ConcurrentDictionary<ulong, bool> _channels = new();
     
     public WSSocket(WebSocket socket, CancellationToken ct) {
@@ -31,7 +29,7 @@ public class WSSocket {
         _ct = ct;
     }
 
-    public Task Close(WebSocketCloseStatus status, string desc) {
+    public Task Close(WebSocketCloseStatus status, string? desc) {
         if (_socket.State is WebSocketState.Closed or WebSocketState.Aborted or WebSocketState.CloseSent) return Task.CompletedTask;
         
         return _socket.CloseAsync(status, desc, _ct);
@@ -64,7 +62,7 @@ public class WSSocket {
         );
     }
 
-    public void SendCloseAndForget(byte[] message, WebSocketCloseStatus status, string desc) {
+    public void SendCloseAndForget(byte[] message, WebSocketCloseStatus status, string? desc) {
         Task.Run(
             async () => {
                 try {
@@ -77,7 +75,7 @@ public class WSSocket {
         );
     }
 
-    public async Task SendAndClose(byte[] message, WebSocketCloseStatus status, string desc) {
+    public async Task SendAndClose(byte[] message, WebSocketCloseStatus status, string? desc) {
         await SendMessage(message);
         await Close(status, desc);
     }
@@ -102,6 +100,8 @@ public class WSSocket {
 
         do {
             recv = await _socket.ReceiveAsync(new ArraySegment<byte>(buffer), _ct);
+            
+            if (recv.MessageType == WebSocketMessageType.Close) break;
 
             var msgRaw = new ReadOnlySpan<byte>(buffer, 0, recv.Count);
             WSBaseMessage? baseMsg = null;
@@ -112,7 +112,7 @@ public class WSSocket {
             
             if (baseMsg == null) throw new WSException("Invalid JSON");
             
-            baseMsg!.ThrowIfInvalid();
+            baseMsg.ThrowIfInvalid();
             
             // Don't accept messages larger than 4096 bytes
             if (!recv.EndOfMessage) {
@@ -125,10 +125,9 @@ public class WSSocket {
             await ProcessMessage(baseMsg);
         } while (!recv.CloseStatus.HasValue);
         
-        await _socket.CloseAsync(
+        await Close(
             recv.CloseStatus!.Value,
-            recv.CloseStatusDescription,
-            _ct);
+            recv.CloseStatusDescription);
     }
 
     public void Cleanup() {
@@ -160,7 +159,7 @@ public class WSSocket {
             throw new WSException("Already logged in");
         }
         
-        var parsedToken = UTokenService.DecodeToken(msg.Token!);
+        var parsedToken = UTokenService.DecodeToken(msg.Token);
         
         if (!parsedToken.success)
             throw new WSException("Invalid token");
@@ -216,6 +215,8 @@ public class WSSocket {
             await txn.RollbackAsync();
             throw;
         }
+
+        await SendMessage(new WSAuthAck(_authId.Value));
     }
 
     private Task ProcessMessage(WSBaseMessage msg) {
@@ -322,7 +323,7 @@ public static class WSServer {
         }
         catch (Exception ex) {
             if (ex is not WSException) {
-                Console.WriteLine($"An error occured in WebSocket: {ex.ToString()}");
+                Console.WriteLine($"An error occured in WebSocket: {ex}");
             }
             
             if (ex is WSException wsEx) {
