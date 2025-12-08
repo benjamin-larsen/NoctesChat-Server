@@ -1,9 +1,11 @@
-﻿using System.Security.Cryptography;
+﻿using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.DataModels;
 using NoctesChat.RequestModels;
 using NoctesChat.ResponseModels;
+using NoctesChat.WSRequestModels;
 
 namespace NoctesChat.APIRoutes;
 
@@ -20,11 +22,20 @@ public static class Auth {
 
         cmd.Parameters.AddWithValue("@user_id", userId);
         cmd.Parameters.AddWithValue("@key_hash", keyHash);
-        
+
         var rowsDeleted = await cmd.ExecuteNonQueryAsync(ct);
 
         if (rowsDeleted != 1)
             return Results.Json(new ErrorResponse("Logout Failed."), statusCode: 500);
+
+        var userToken = new UserToken(userId, keyHash);
+
+        WSServer.UserTokens.SendCloseAndForget(
+            userToken,
+            new WSAuthError("You've been logged out.", 401),
+            WebSocketCloseStatus.NormalClosure,
+            "You've been logged out."
+        );
 
         return Results.Json(new { ok = true }, statusCode: 200);
     }
@@ -36,7 +47,7 @@ public static class Auth {
 
         try {
             reqBody = await ctx.Request.ReadFromJsonAsync<LoginBody>(ct);
-        } catch (JsonException) {}
+        } catch {}
         
         if (reqBody == null)
             return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
@@ -62,7 +73,7 @@ public static class Auth {
                 return Results.Json(new ErrorResponse("Email or password is wrong."), statusCode: 400);
             }
             
-            token = UserToken.GenerateToken();
+            token = UTokenService.GenerateToken();
             var tokenHash = SHA256.HashData(token);
 
             if (!await Database.InsertUserToken(loginData.ID, tokenHash, Utils.GetTime(), conn, txn, ct))
@@ -75,7 +86,7 @@ public static class Auth {
             throw;
         }
         
-        return Results.Json(new { token = UserToken.EncodeToken(loginData.ID, token), id = loginData.ID.ToString() }, statusCode: 200);
+        return Results.Json(new { token = UTokenService.EncodeToken(loginData.ID, token), id = loginData.ID.ToString() }, statusCode: 200);
     }
 
     internal static async Task<IResult> Register(HttpContext ctx) {
@@ -85,7 +96,7 @@ public static class Auth {
 
         try {
             reqBody = await ctx.Request.ReadFromJsonAsync<RegisterBody>(ct);
-        } catch (JsonException) {}
+        } catch {}
         
         if (reqBody == null)
             return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
@@ -116,7 +127,7 @@ public static class Auth {
             if (!await Database.InsertUser(user, conn, txn, ct))
                 throw new Exception("Failed to insert user into Database.");
             
-            token = UserToken.GenerateToken();
+            token = UTokenService.GenerateToken();
             var tokenHash = SHA256.HashData(token);
 
             if (!await Database.InsertUserToken(user.ID, tokenHash, user.CreatedAt, conn, txn, ct))
@@ -145,7 +156,7 @@ public static class Auth {
             throw;
         }
 
-        return Results.Json(new { token = UserToken.EncodeToken(user.ID, token), id = user.ID.ToString() }, statusCode: 200);
+        return Results.Json(new { token = UTokenService.EncodeToken(user.ID, token), id = user.ID.ToString() }, statusCode: 200);
     }
     
     internal static async ValueTask<object?> Middleware(
@@ -155,7 +166,7 @@ public static class Auth {
         if (!headers.TryGetValue("Authorization", out var key))
             return Results.Json(new ErrorResponse("You need to be logged in."), statusCode: 401);
 
-        var parsedToken = UserToken.DecodeToken(key!);
+        var parsedToken = UTokenService.DecodeToken(key!);
         
         if (!parsedToken.success)
             return Results.Json(new ErrorResponse("Invalid token."), statusCode: 400);

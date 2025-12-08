@@ -2,10 +2,42 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
+using System.IO.Hashing;
 
 namespace NoctesChat;
 
-public static class UserToken {
+public struct UserToken
+{
+    public UserToken(ulong userId, byte[] token)
+    {
+        this.userId = userId;
+        this.token = token;
+    }
+
+    public ulong userId;
+    public byte[] token;
+
+    public override bool Equals(object? obj) {
+        if (obj is not UserToken other) return false;
+        
+        if (this.userId != other.userId) return false;
+        if (this.token.Length != other.token.Length) return false;
+        
+        return this.token.SequenceEqual(other.token);
+    }
+
+    public override int GetHashCode() {
+        Span<byte> bytes = stackalloc byte[8 + 32];
+        
+        BitConverter.GetBytes(userId).CopyTo(bytes);
+        token.CopyTo(bytes.Slice(8));
+        
+        return (int)XxHash32.HashToUInt32(bytes);
+    }
+}
+
+public static class UTokenService {
     public static (ulong userID, byte[] token, bool success) DecodeToken(string key) {
         var segments = key.Split(':');
 

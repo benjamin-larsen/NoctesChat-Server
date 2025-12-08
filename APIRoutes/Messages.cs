@@ -2,6 +2,7 @@
 using MySqlConnector;
 using NoctesChat.RequestModels;
 using NoctesChat.ResponseModels;
+using NoctesChat.WSRequestModels;
 
 namespace NoctesChat.APIRoutes;
 
@@ -158,7 +159,7 @@ public static class Messages {
 
         try {
             reqBody = await ctx.Request.ReadFromJsonAsync<PostMessageBody>(ct);
-        } catch (JsonException) {}
+        } catch {}
         
         if (reqBody == null)
             return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
@@ -224,14 +225,18 @@ public static class Messages {
             await txn.RollbackAsync();
             throw;
         }
-        
-        // Send WS stuff here
-        
-        return Results.Json(new MessageResponse {
+
+        var msg = new MessageResponse {
             ID = messageId,
             Author = user,
             Content = reqBody.Content,
             Timestamp = creationTime
-        }, statusCode: 200);
+        };
+        
+        WSServer.Channels.SendMessage(channelId, new WSPushMessage {
+            Message = msg
+        });
+        
+        return Results.Json(msg, statusCode: 200);
     }
 }

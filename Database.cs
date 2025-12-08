@@ -158,6 +158,19 @@ public class Database {
         
         return value != null;
     }
+    
+    public static async Task<bool> HasUserTokenAtomic(ulong userId, byte[] tokenHash, MySqlConnection conn, MySqlTransaction txn, CancellationToken ct) {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = txn;
+        cmd.CommandText = "SELECT 1 FROM user_tokens WHERE user_id = @id AND key_hash = @key_hash FOR SHARE;";
+
+        cmd.Parameters.AddWithValue("@id", userId);
+        cmd.Parameters.AddWithValue("@key_hash", tokenHash);
+
+        var value = await cmd.ExecuteScalarAsync(ct);
+        
+        return value != null;
+    }
 
     public static async Task<bool> InsertUser(
         User user, MySqlConnection conn, MySqlTransaction transaction, CancellationToken ct) {

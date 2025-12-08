@@ -3,6 +3,7 @@ using System.Text.Json;
 using MySqlConnector;
 using NoctesChat.RequestModels;
 using NoctesChat.ResponseModels;
+using NoctesChat.WSRequestModels;
 
 namespace NoctesChat.APIRoutes;
 
@@ -91,7 +92,7 @@ public static class Channels {
 
         try {
             reqBody = await ctx.Request.ReadFromJsonAsync<CreateChannelBody>(ct);
-        } catch (JsonException) {}
+        } catch {}
         
         if (reqBody == null)
             return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
@@ -127,8 +128,10 @@ public static class Channels {
 
             await using (var cmd = conn.CreateCommand()) {
                 cmd.Transaction = txn;
-                cmd.CommandText =
-                    "INSERT INTO channels (id, owner, name, member_count, created_at) VALUES(@id, @owner, @name, 0, @created_at);";
+                cmd.CommandText = """
+                                  INSERT INTO channels (id, owner, name, member_count, created_at)
+                                  VALUES(@id, @owner, @name, 0, @created_at);
+                                  """;
 
                 cmd.Parameters.AddWithValue("@id", channelId);
                 cmd.Parameters.AddWithValue("@owner", userId);
@@ -179,14 +182,26 @@ public static class Channels {
             throw;
         }
 
-        return Results.Json(new ChannelResponse {
+        var channel = new ChannelResponse {
             ID = channelId,
             Name = reqBody.Name,
             Owner = user,
             MemberCount = (uint)reqBody.Members.Length + 1,
             CreatedAt = creationTime,
             LastAccessed = creationTime
-        }, statusCode: 200);
+        };
+
+        var postChannel = new WSPushChannel {
+            Channel = channel,
+        };
+        
+        WSServer.AnnounceChannel(userId, postChannel);
+
+        foreach (var member in reqBody.Members) {
+            WSServer.AnnounceChannel(member, postChannel);
+        }
+
+        return Results.Json(channel, statusCode: 200);
     }
 
     internal static async Task<IResult> Update(HttpContext ctx, string _channelId) {
@@ -202,7 +217,7 @@ public static class Channels {
 
         try {
             reqBody = await ctx.Request.ReadFromJsonAsync<UpdateChannelBody>(ct);
-        } catch (JsonException) {}
+        } catch {}
         
         if (reqBody == null)
             return Results.Json(new ErrorResponse("Invalid JSON"), statusCode: 400);
@@ -310,6 +325,10 @@ public static class Channels {
             throw;
         }
         
+        WSServer.Channels.SendMessage(channelId, new WSUpdateChannel {
+            Channel = channel
+        });
+        
         return Results.Json(channel, statusCode: 200);
     }
 
@@ -347,6 +366,8 @@ public static class Channels {
             await txn.RollbackAsync();
             throw;
         }
+        
+        WSServer.DeleteChannel(channelId);
         
         return Results.Json(new { ok = true }, statusCode: 200);
     }

@@ -26,6 +26,12 @@ if (builder.Environment.IsDevelopment()) {
 
 app.MapStaticAssets();
 
+app.UseWebSockets(new WebSocketOptions {
+    KeepAliveTimeout = TimeSpan.FromMinutes(5)
+});
+
+app.Map("/ws", WSServer.HandleRequest);
+
 APIHandler.Use(app);
 
 app.MapFallback(() =>
