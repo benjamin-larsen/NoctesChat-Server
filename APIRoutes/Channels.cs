@@ -268,12 +268,14 @@ public static class Channels {
                 
                 channel = ChannelResponse.FromReader(reader, false);
                 
+                if (updatesOwner && reqBody.Owner != userId) doesUpdate = true;
+                if (updatesName && reqBody.Name != channel.Name) doesUpdate = true;
+                
                 if (updatesName) {
                     channel.Name = reqBody.Name!;
                 }
             }
             
-            if (updatesOwner && !await Database.ExistsInChannel(reqBody.Owner!.Value, channelId, conn, txn, ct)) {
             if (updatesOwner && !await Database.ExistsInChannel(reqBody.Owner!.Value, channelId, conn, txn, ct, true)) {
                 await txn.RollbackAsync();
                 return Results.Json(new ErrorResponse("New Owner must be a Channel Member"), statusCode: 403);
