@@ -328,7 +328,16 @@ public static class WSServer {
             await wsSocket.Run();
         }
         catch (Exception ex) {
-            if (ex is not WSException) {
+            if (ex is JsonException) {
+                await wsSocket.Close(
+                    WebSocketCloseStatus.PolicyViolation,
+                    "Invalid JSON"
+                );
+                
+                return;
+            }
+            
+            if (ex is not WSException and not ObjectDisposedException and not OperationCanceledException and not WebSocketException) {
                 Console.WriteLine($"An error occured in WebSocket: {ex}");
             }
             
