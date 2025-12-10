@@ -268,11 +268,13 @@ public static class WSServer {
         
         var json = JsonSerializer.Serialize(msg);
         var bytes = Encoding.UTF8.GetBytes(json);
-        
-        foreach (var socket in channel.sockets) {
-            // Fire and Forget
-            socket.SubscribeToChannel(channelId);
-            socket.SendAndForget(bytes);
+
+        lock (channel._lock) {
+            foreach (var socket in channel.sockets) {
+                // Fire and Forget
+                socket.SubscribeToChannel(channelId);
+                socket.SendAndForget(bytes);
+            }
         }
     }
 
@@ -283,11 +285,13 @@ public static class WSServer {
             Channel = channelId
         });
         var bytes = Encoding.UTF8.GetBytes(json);
-        
-        foreach (var socket in channel.sockets) {
-            // Fire and Forget
-            socket.UnsubscribeFromChannel(channelId);
-            socket.SendAndForget(bytes);
+
+        lock (channel._lock) {
+            foreach (var socket in channel.sockets) {
+                // Fire and Forget
+                socket.UnsubscribeFromChannel(channelId);
+                socket.SendAndForget(bytes);
+            }
         }
     }
 
@@ -298,11 +302,13 @@ public static class WSServer {
             Channel = channelId
         });
         var bytes = Encoding.UTF8.GetBytes(json);
-        
-        foreach (var socket in user.sockets) {
-            // Fire and Forget
-            socket.UnsubscribeFromChannel(channelId);
-            socket.SendAndForget(bytes);
+
+        lock (user._lock) {
+            foreach (var socket in user.sockets) {
+                // Fire and Forget
+                socket.UnsubscribeFromChannel(channelId);
+                socket.SendAndForget(bytes);
+            }
         }
     }
     

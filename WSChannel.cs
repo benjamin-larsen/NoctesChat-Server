@@ -30,9 +30,11 @@ where TKey : notnull {
         var json = JsonSerializer.Serialize(message);
         var bytes = Encoding.UTF8.GetBytes(json);
 
-        foreach (var socket in channel.sockets) {
-            // Fire and Forget
-            socket.SendAndForget(bytes);
+        lock (channel._lock) {
+            foreach (var socket in channel.sockets) {
+                // Fire and Forget
+                socket.SendAndForget(bytes);
+            }
         }
     }
 
@@ -41,10 +43,12 @@ where TKey : notnull {
         
         var json = JsonSerializer.Serialize(message);
         var bytes = Encoding.UTF8.GetBytes(json);
-        
-        foreach (var socket in channel.sockets) {
-            // Fire and Forget
-            socket.SendCloseAndForget(bytes, status, desc);
+
+        lock (channel._lock) {
+            foreach (var socket in channel.sockets) {
+                // Fire and Forget
+                socket.SendCloseAndForget(bytes, status, desc);
+            }
         }
     }
 
