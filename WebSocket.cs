@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 using NoctesChat.ResponseModels;
 using NoctesChat.WSRequestModels;
 
@@ -219,18 +220,60 @@ public class WSSocket {
         await SendMessage(new WSAuthAck(_authId.Value));
     }
 
+    private async Task ProcessTyping(WSTyping msg, WSTyping.Variant variant) {
+        var respondType = variant == WSTyping.Variant.Start ? "start_typing" : "stop_typing";
+
+        if (!_authId.HasValue) {
+            await SendMessage(new WSError("You need to be logged in.", respondType, 401));
+            return;
+        }
+
+        if (!_channels.ContainsKey(msg.Channel)) {
+            await SendMessage(new WSError("Unknown Channel", respondType, 404));
+            return;
+        }
+
+        if (variant == WSTyping.Variant.Start) {
+            WSServer.Channels.SendMessage(msg.Channel, new WSAnnounceStartTyping {
+                Member = _authId.Value,
+                Channel = msg.Channel
+            });
+        } else if (variant == WSTyping.Variant.Stop) {
+            WSServer.Channels.SendMessage(msg.Channel, new WSAnnounceStopTyping {
+                Member = _authId.Value,
+                Channel = msg.Channel
+            });
+        }
+    }
+
     private Task ProcessMessage(WSBaseMessage msg) {
         switch (msg.Type) {
-            case "login":
+            case "login": {
                 WSLoginMessage? decodedMsg = null;
-                
+
                 try {
                     decodedMsg = msg.Data.Deserialize<WSLoginMessage>();
-                } catch {}
-                
+                }
+                catch { }
+
                 if (decodedMsg == null) throw new WSException("Invalid JSON");
 
                 return ProcessLogin(decodedMsg);
+            }
+            
+            case "stop_typing":
+            case "start_typing": {
+                WSTyping? decodedMsg = null;
+
+                try {
+                    decodedMsg = msg.Data.Deserialize<WSTyping>(new JsonSerializerOptions { NumberHandling = JsonNumberHandling.AllowReadingFromString });
+                }
+                catch { }
+
+                if (decodedMsg == null) throw new WSException("Invalid JSON");
+
+                return ProcessTyping(decodedMsg, msg.Type == "start_typing" ? WSTyping.Variant.Start : WSTyping.Variant.Stop);
+            }
 
             case "debug": {
                 Console.WriteLine(JsonSerializer.Serialize(new {
