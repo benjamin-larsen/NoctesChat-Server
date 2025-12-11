@@ -23,6 +23,7 @@ public class WSSocket {
 
     private ulong? _authId;
     private UserToken? _userToken;
+    // bool for wether socket was typing in this channel
     private ConcurrentDictionary<ulong, bool> _channels = new();
     
     public WSSocket(WebSocket socket, CancellationToken ct) {
@@ -140,13 +141,20 @@ public class WSSocket {
             WSServer.UserTokens.Unsubscribe(_userToken.Value, this);
         }
 
-        foreach (var (channel, _) in _channels) {
+        foreach (var (channel, wasTyping) in _channels) {
             WSServer.Channels.Unsubscribe(channel, this);
+            
+            if (wasTyping && _authId.HasValue) {
+                WSServer.Channels.SendMessage(channel, new WSAnnounceStopTyping {
+                    Member = _authId.Value,
+                    Channel = channel
+                });
+            }
         }
     }
     
     public void SubscribeToChannel(ulong channelId) {
-        _channels.TryAdd(channelId, true);
+        _channels.TryAdd(channelId, false);
         WSServer.Channels.Subscribe(channelId, this);
     }
     
@@ -228,17 +236,21 @@ public class WSSocket {
             return;
         }
 
-        if (!_channels.ContainsKey(msg.Channel)) {
+        if (!_channels.TryGetValue(msg.Channel, out var oldTyping)) {
             await SendMessage(new WSError("Unknown Channel", respondType, 404));
             return;
         }
 
         if (variant == WSTyping.Variant.Start) {
+            _channels.TryUpdate(msg.Channel, true, oldTyping);
+
             WSServer.Channels.SendMessage(msg.Channel, new WSAnnounceStartTyping {
                 Member = _authId.Value,
                 Channel = msg.Channel
             });
         } else if (variant == WSTyping.Variant.Stop) {
+            _channels.TryUpdate(msg.Channel, false, oldTyping);
+
             WSServer.Channels.SendMessage(msg.Channel, new WSAnnounceStopTyping {
                 Member = _authId.Value,
                 Channel = msg.Channel
