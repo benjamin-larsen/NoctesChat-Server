@@ -24,8 +24,6 @@ if (builder.Environment.IsDevelopment()) {
     app.UseCors("localhost-cors");
 }
 
-app.MapStaticAssets();
-
 app.UseWebSockets(new WebSocketOptions {
     KeepAliveTimeout = TimeSpan.FromMinutes(5)
 });
@@ -34,9 +32,8 @@ app.Map("/ws", WSServer.HandleRequest);
 
 APIHandler.Use(app);
 
-app.MapFallback(() =>
-{
-    return Results.File("./index.html", "text/html");
+app.MapFallback(() => {
+    return Results.Json(new ErrorResponse("Not Found"), statusCode: 404);
 });
 
 app.UseExceptionHandler(new ExceptionHandlerOptions {
