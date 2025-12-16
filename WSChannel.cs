@@ -20,9 +20,10 @@ public class WSChannel {
     }
 }
 
-public class WSChannelManager<TKey>
-where TKey : notnull {
-    public readonly ConcurrentDictionary<TKey, WSChannel> Subs = new();
+public class WSChannelManager<TKey, TValue>
+where TKey : notnull
+where TValue : WSChannel, new() {
+    public readonly ConcurrentDictionary<TKey, TValue> Subs = new();
 
     public void SendMessage(TKey key, object message) {
         if (!Subs.TryGetValue(key, out var channel)) return;
@@ -32,6 +33,21 @@ where TKey : notnull {
 
         lock (channel._lock) {
             foreach (var socket in channel.sockets) {
+                // Fire and Forget
+                socket.SendAndForget(bytes);
+            }
+        }
+    }
+    
+    public void SendMessageExclUser(TKey key, object message, ulong excludeUser) {
+        if (!Subs.TryGetValue(key, out var channel)) return;
+        
+        var json = JsonSerializer.Serialize(message);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        lock (channel._lock) {
+            foreach (var socket in channel.sockets) {
+                if (socket._authId == excludeUser) continue;
                 // Fire and Forget
                 socket.SendAndForget(bytes);
             }
@@ -53,7 +69,7 @@ where TKey : notnull {
     }
 
     public void Subscribe(TKey key, WSSocket socket) {
-        var channel = Subs.GetOrAdd(key, _ => new WSChannel());
+        var channel = Subs.GetOrAdd(key, _ => new TValue());
 
         lock (channel._lock) {
             channel.Add(socket);
@@ -72,3 +88,5 @@ where TKey : notnull {
         }
     }
 }
+
+public class WSChannelManager<TKey> : WSChannelManager<TKey, WSChannel> {}

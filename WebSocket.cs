@@ -21,7 +21,7 @@ public class WSSocket {
     private readonly WebSocket _socket;
     private readonly CancellationToken _ct;
 
-    private ulong? _authId;
+    public ulong? _authId;
     private UserToken? _userToken;
     // bool for wether socket was typing in this channel
     private ConcurrentDictionary<ulong, bool> _channels = new();
@@ -135,6 +135,17 @@ public class WSSocket {
     public void Cleanup() {
         if (_authId.HasValue) {
             WSServer.Users.Unsubscribe(_authId.Value, this);
+            
+            var nextPresence = WSServer.GetPresence(_authId.Value);
+
+            if (nextPresence != "online") {
+                foreach (var (channel, _) in _channels) {
+                    WSServer.Channels.SendMessageExclUser(channel, new WSPushPresence {
+                        User = _authId.Value,
+                        Status = nextPresence
+                    }, _authId.Value);
+                }
+            }
         }
         
         if (_userToken.HasValue) {
@@ -178,6 +189,11 @@ public class WSSocket {
         await using var conn = await Database.GetConnection(_ct);
         await using var txn = await conn.BeginTransactionAsync(_ct);
 
+        List<WSAuthChannel> channels;
+        HashSet<ulong> memberIds;
+
+        string prevPresence;
+
         try {
             var hasToken = await Database.HasUserTokenAtomic(parsedToken.userID, keyHash, conn, txn, _ct);
 
@@ -191,41 +207,108 @@ public class WSSocket {
                 throw new WSException("You've been logged out. Please log in and try again.");
             }
             
-            await using (var cmd = conn.CreateCommand()) {
-                cmd.Transaction = txn;
-                cmd.CommandText = """
-                                  SELECT
-                                      channel_id
-                                  FROM channel_members
-                                  WHERE user_id = @user_id
-                                  FOR SHARE;
-                                  """;
-
-                cmd.Parameters.AddWithValue("@user_id", parsedToken.userID);
-                
-                await using var reader = await cmd.ExecuteReaderAsync(_ct);
-                
-                while (await reader.ReadAsync(_ct)) {
-                    var channelId = reader.GetUInt64(0);
-                    SubscribeToChannel(channelId);
-                }
-            }
-            
             _authId = parsedToken.userID;
             _userToken = new UserToken(parsedToken.userID, keyHash);
+            
+            prevPresence = WSServer.GetPresence(_authId.Value);
             
             WSServer.Users.Subscribe(_authId.Value, this);
             WSServer.UserTokens.Subscribe(_userToken.Value, this);
             
-            // Don't release lock until we've subscribed to topic, to avoid race-condition
+            // Initalize Channel List
+            channels = new List<WSAuthChannel>();
+            memberIds = new HashSet<ulong>();
+            
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = """
+                                  SELECT
+                                      cm.channel_id AS id,
+                                      cm.last_accessed,
+                                      c.name,
+                                      c.created_at,
+                                      o.id AS owner_id,
+                                      o.username AS owner_username,
+                                      o.created_at AS owner_created_at
+                                  FROM channel_members cm
+                                  JOIN channels c ON cm.channel_id = c.id
+                                  LEFT JOIN users o ON c.owner = o.id
+                                  WHERE cm.user_id = @user_id
+                                  FOR SHARE OF cm;
+                                  """;
+
+                cmd.Parameters.AddWithValue("@user_id", _authId);
+                
+                await using var reader = await cmd.ExecuteReaderAsync(_ct);
+                
+                while (await reader.ReadAsync(_ct)) {
+                    channels.Add(WSAuthChannel.FromReader(reader));
+                }
+            }
+
+            // Map Channel to ID
+            var channelMap = channels.ToDictionary(c => c.ID);
+
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = $"""
+                                  SELECT
+                                      cm.channel_id,
+                                      u.id AS member_id,
+                                      u.username AS member_username,
+                                      u.created_at AS member_created_at
+                                  FROM channel_members cm
+                                  JOIN users u ON u.id = cm.user_id
+                                  WHERE cm.channel_id IN ({
+                                      string.Join(',', channels.Select(c => c.ID.ToString()))
+                                  });
+                                  """;
+                // Normally we would use SQL paramaters, but c.ID is a ulong, so it's safe to input directly.
+                
+                await using var reader = await cmd.ExecuteReaderAsync(_ct);
+
+                while (await reader.ReadAsync(_ct)) {
+                    var channelId = reader.GetUInt64(0);
+                    if (!channelMap.TryGetValue(channelId, out var channel)) continue;
+
+                    var user = UserResponse.FromReader(reader, 1);
+                    
+                    channel.Members.Add(user);
+                    memberIds.Add(user.ID);
+                }
+            }
+            
             await txn.CommitAsync(_ct);
         }
         catch {
             await txn.RollbackAsync();
             throw;
         }
+        
+        // Subscribe to channels
+        foreach (var channel in channels)
+        {
+            _channels.TryAdd(channel.ID, false);
+            WSServer.Channels.Subscribe(channel.ID, this);
 
-        await SendMessage(new WSAuthAck(_authId.Value));
+            if (prevPresence != "online") {
+                WSServer.Channels.SendMessageExclUser(channel.ID, new WSPushPresence {
+                    User = _authId.Value,
+                    Status = "online"
+                }, _authId.Value);
+            }
+        }
+            
+        await SendMessage(new WSAuthAck(_authId.Value, channels));
+            
+        // Send presences
+        foreach (var memberId in memberIds) {
+            if (memberId == _authId) continue;
+            await SendMessage(new WSPushPresence {
+                User = memberId,
+                Status = WSServer.GetPresence(memberId)
+            });
+        }
     }
 
     private async Task ProcessTyping(WSTyping msg, WSTyping.Variant variant) {
@@ -258,6 +341,10 @@ public class WSSocket {
         }
     }
 
+    private async Task ProcessHeartbeat() {
+        await SendMessage(new WSHeartbeatAck());
+    }
+
     private Task ProcessMessage(WSBaseMessage msg) {
         switch (msg.Type) {
             case "login": {
@@ -271,6 +358,10 @@ public class WSSocket {
                 if (decodedMsg == null) throw new WSException("Invalid JSON");
 
                 return ProcessLogin(decodedMsg);
+            }
+
+            case "heartbeat": {
+                return ProcessHeartbeat();
             }
             
             case "stop_typing":
@@ -316,20 +407,89 @@ public static class WSServer {
     public static readonly WSChannelManager<UserToken> UserTokens = new();
     public static readonly WSChannelManager<ulong> Channels = new();
 
-    public static void AnnounceChannel(ulong userId, WSPushChannel msg) {
-        var channelId = msg.Channel.ID;
+    public static string GetPresence(ulong userId) {
+        if (!Users.Subs.TryGetValue(userId, out var socketChannel)) return "offline";
         
-        if (!Users.Subs.TryGetValue(userId, out var channel)) return;
+        if (socketChannel.sockets.Count == 0) return "offline";
+
+        return "online";
+    }
+
+    public static async Task AnnounceChannel(ulong userId, ChannelResponse channel) {
+        var channelId = channel.ID;
+        
+        if (!Users.Subs.TryGetValue(userId, out var socketChannel)) return;
+
+        WSPushChannel msg;
+
+        await using (var conn = await Database.GetConnection()) {
+            msg = new WSPushChannel {
+                Channel = channel,
+                Members = await Database.GetChannelMembers(channelId, conn, null)
+            };
+        }
         
         var json = JsonSerializer.Serialize(msg);
         var bytes = Encoding.UTF8.GetBytes(json);
 
-        lock (channel._lock) {
-            foreach (var socket in channel.sockets) {
+        lock (socketChannel._lock) {
+            foreach (var socket in socketChannel.sockets) {
                 // Fire and Forget
                 socket.SubscribeToChannel(channelId);
                 socket.SendAndForget(bytes);
             }
+        }
+        
+        foreach (var member in msg.Members) {
+            var memberId = member.ID;
+            if (memberId == userId) continue;
+            
+            Users.SendMessage(userId, new WSPushPresence {
+                User = memberId,
+                Status = GetPresence(memberId)
+            });
+        }
+    }
+    
+    public static async Task AnnounceChannelBulk(List<ulong> members, ChannelResponse channel) {
+        WSPushChannel? msg = null;
+        var channelId = channel.ID;
+        
+        var bytes = Array.Empty<byte>();
+
+        foreach (var userId in members) {
+            if (!Users.Subs.TryGetValue(userId, out var socketChannel)) continue;
+
+            if (msg == null) {
+                await using (var conn = await Database.GetConnection()) {
+                    msg = new WSPushChannel {
+                        Channel = channel,
+                        Members = await Database.GetChannelMembers(channelId, conn, null)
+                    };
+                }
+                
+                var json = JsonSerializer.Serialize(msg);
+                bytes = Encoding.UTF8.GetBytes(json);
+            }
+            
+            lock (socketChannel._lock) {
+                foreach (var socket in socketChannel.sockets) {
+                    // Fire and Forget
+                    socket.SubscribeToChannel(channelId);
+                    socket.SendAndForget(bytes);
+                }
+            }
+        }
+        
+        if (msg == null) return;
+
+        foreach (var member in msg.Members) {
+            var memberId = member.ID;
+            
+            Channels.SendMessageExclUser(channelId, new WSPushPresence {
+                User = memberId,
+                Status = GetPresence(memberId)
+            }, memberId);
         }
     }
 

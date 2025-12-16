@@ -141,20 +141,20 @@ public static class Channels {
 
                 if (rowsInserted != 1) throw new Exception("Failed to insert channel");
             }
-            
-            var sb = new StringBuilder("INSERT INTO channel_members (user_id, channel_id, last_accessed) VALUES");
-            sb.Append($"({userId.ToString()},@channel_id,@last_accessed)");
-
-            foreach (var member in reqBody.Members) {
-                // Normally inserting User Input (Member ID) directly into a SQL Query would be unsafe.
-                // However, because Members is an Array of ULONG (Unsigned 64-Bit Integers) which has been parsed by ASP.NET.
-                // It would mean any unsafe input would've caused a Parse Fault.
-                // It would also be logically impossible for an unsafe input to be put into a number that is converted back into a string.
-
-                sb.Append($",({member.ToString()},@channel_id,@last_accessed)");
-            }
 
             await using (var cmd = conn.CreateCommand()) {
+                var sb = new StringBuilder("INSERT INTO channel_members (user_id, channel_id, last_accessed) VALUES");
+                sb.Append($"({userId.ToString()},@channel_id,@last_accessed)");
+
+                foreach (var member in reqBody.Members) {
+                    // Normally inserting User Input (Member ID) directly into a SQL Query would be unsafe.
+                    // However, because Members is an Array of ULONG (Unsigned 64-Bit Integers) which has been parsed by ASP.NET.
+                    // It would mean any unsafe input would've caused a Parse Fault.
+                    // It would also be logically impossible for an unsafe input to be put into a number that is converted back into a string.
+
+                    sb.Append($",({member.ToString()},@channel_id,@last_accessed)");
+                }
+
                 cmd.Transaction = txn;
                 cmd.CommandText = sb.ToString();
 
@@ -189,16 +189,15 @@ public static class Channels {
             CreatedAt = creationTime,
             LastAccessed = creationTime
         };
-
-        var postChannel = new WSPushChannel {
-            Channel = channel,
-        };
         
-        WSServer.AnnounceChannel(userId, postChannel);
-
-        foreach (var member in reqBody.Members) {
-            WSServer.AnnounceChannel(member, postChannel);
-        }
+        var memberIds = new List<ulong>();
+        
+        memberIds.Add(userId);
+        memberIds.AddRange(reqBody.Members);
+        
+        await WSServer.AnnounceChannelBulk(memberIds, channel);
+        
+        // send members and subscribe to presences here
 
         return Results.Json(channel, statusCode: 200);
     }
@@ -394,6 +393,7 @@ public static class Channels {
         var ct = ctx.RequestAborted;
 
         ChannelResponse channel;
+        UserResponse member;
         
         await using var conn = await Database.GetConnection(ct);
         await using var txn = await conn.BeginTransactionAsync(ct);
@@ -432,6 +432,20 @@ public static class Channels {
                 channel = ChannelResponse.FromReader(reader);
                 channel.LastAccessed = Utils.GetTime();
                 channel.MemberCount++;
+            }
+
+            await using (var cmd = conn.CreateCommand()) {
+                cmd.Transaction = txn;
+                cmd.CommandText = "SELECT id, username, created_at FROM users WHERE id = @member_id;";
+                
+                cmd.Parameters.AddWithValue("@member_id", memberId);
+                
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                
+                if (!await reader.ReadAsync(ct))
+                    throw new APIException("User doesn't exist.", 404);
+                
+                member = UserResponse.FromReader(reader);
             }
 
             await using (var cmd = conn.CreateCommand()) {
@@ -475,9 +489,18 @@ public static class Channels {
             throw;
         }
         
-        WSServer.AnnounceChannel(memberId, new WSPushChannel {
-            Channel = channel
-        });
+        WSServer.Channels.SendMessageExclUser(channelId, new WSPushChannelMember {
+            Channel = channelId,
+            Member = member
+        }, memberId);
+        
+        WSServer.Channels.SendMessageExclUser(channelId, new WSPushPresence {
+            User = memberId,
+            Status = WSServer.GetPresence(memberId)
+        }, memberId);
+        
+        // fetch members if any websockets to receive this
+        await WSServer.AnnounceChannel(memberId, channel);
 
         return Results.Json(new { ok = true });
     }
@@ -533,7 +556,20 @@ public static class Channels {
         }
         
         WSServer.LeaveChannel(memberId, channelId);
+        
+        WSServer.Channels.SendMessage(channelId, new WSDeleteChannelMember {
+            Channel = channelId,
+            Member = memberId
+        });
 
         return Results.Json(new { ok = true });
+    }
+
+    internal static async Task<IResult> Leave(HttpContext ctx, string _channelId) {
+        if (!ulong.TryParse(_channelId, out var channelId)) {
+            return Results.Json(new ErrorResponse("Invalid channel id."), statusCode: 400);
+        }
+        
+        return Results.Text("");
     }
 }

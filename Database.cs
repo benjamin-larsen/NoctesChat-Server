@@ -314,8 +314,35 @@ public class Database {
         
         return value != null;
     }
+
+    public static async Task<List<UserResponse>> GetChannelMembers(
+        ulong channelId, MySqlConnection conn, MySqlTransaction? transaction, CancellationToken ct = default) {
+        await using var cmd  = conn.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+                           SELECT
+                               u.id,
+                               u.username,
+                               u.created_at
+                           FROM channel_members cm
+                           JOIN users u ON u.id = cm.user_id
+                           WHERE cm.channel_id = @channel_id;
+                           """;
+        
+        cmd.Parameters.AddWithValue("@channel_id", channelId);
+        
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        
+        var memberList = new List<UserResponse>();
+
+        while (await reader.ReadAsync(ct)) {
+            memberList.Add(UserResponse.FromReader(reader));
+        }
+
+        return memberList;
+    }
     
-    public static async Task<MySqlConnection> GetConnection(CancellationToken ct)
+    public static async Task<MySqlConnection> GetConnection(CancellationToken ct = default)
     {
         var conn = new MySqlConnection(connectionUrl + "Database=noctes_chat; UseAffectedRows=true;");
         await conn.OpenAsync(ct);

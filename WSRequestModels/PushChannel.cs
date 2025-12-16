@@ -9,6 +9,9 @@ public class WSPushChannel {
     
     [JsonPropertyName("channel")]
     public required ChannelResponse Channel { get; set; }
+    
+    [JsonPropertyName("members")]
+    public required List<UserResponse> Members { get; set; }
 }
 
 public class WSUpdateChannel {
