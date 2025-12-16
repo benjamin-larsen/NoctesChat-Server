@@ -246,35 +246,37 @@ public class WSSocket {
                 }
             }
 
-            // Map Channel to ID
-            var channelMap = channels.ToDictionary(c => c.ID);
-
-            await using (var cmd = conn.CreateCommand()) {
-                cmd.Transaction = txn;
-                cmd.CommandText = $"""
-                                  SELECT
-                                      cm.channel_id,
-                                      u.id AS member_id,
-                                      u.username AS member_username,
-                                      u.created_at AS member_created_at
-                                  FROM channel_members cm
-                                  JOIN users u ON u.id = cm.user_id
-                                  WHERE cm.channel_id IN ({
-                                      string.Join(',', channels.Select(c => c.ID.ToString()))
-                                  });
-                                  """;
-                // Normally we would use SQL paramaters, but c.ID is a ulong, so it's safe to input directly.
+            if (channels.Count > 0) {
+                // Map Channel to ID
+                var channelMap = channels.ToDictionary(c => c.ID);
                 
-                await using var reader = await cmd.ExecuteReaderAsync(_ct);
+                await using (var cmd = conn.CreateCommand()) {
+                    cmd.Transaction = txn;
+                    cmd.CommandText = $"""
+                                       SELECT
+                                           cm.channel_id,
+                                           u.id AS member_id,
+                                           u.username AS member_username,
+                                           u.created_at AS member_created_at
+                                       FROM channel_members cm
+                                       JOIN users u ON u.id = cm.user_id
+                                       WHERE cm.channel_id IN ({
+                                           string.Join(',', channels.Select(c => c.ID.ToString()))
+                                       });
+                                       """;
+                    // Normally we would use SQL paramaters, but c.ID is a ulong, so it's safe to input directly.
+                
+                    await using var reader = await cmd.ExecuteReaderAsync(_ct);
 
-                while (await reader.ReadAsync(_ct)) {
-                    var channelId = reader.GetUInt64(0);
-                    if (!channelMap.TryGetValue(channelId, out var channel)) continue;
+                    while (await reader.ReadAsync(_ct)) {
+                        var channelId = reader.GetUInt64(0);
+                        if (!channelMap.TryGetValue(channelId, out var channel)) continue;
 
-                    var user = UserResponse.FromReader(reader, 1);
+                        var user = UserResponse.FromReader(reader, 1);
                     
-                    channel.Members.Add(user);
-                    memberIds.Add(user.ID);
+                        channel.Members.Add(user);
+                        memberIds.Add(user.ID);
+                    }
                 }
             }
             
